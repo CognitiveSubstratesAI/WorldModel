@@ -23,6 +23,21 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         @test loop.tick == 0
     end
 
+    @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin
+        loop = CognitiveLoop(; backend=MockBackend())
+        # boost two atoms, rent 0 → STI = normalized boost (edge 3/4, rare 1/4); focus = both (> 0)
+        focus = attention_step!(
+            loop; boost=Dict(raw"(edge $x $y)" => 3.0, raw"(rare $x)" => 1.0), rent=0.0
+        )
+        @test focus == sort([raw"(edge $x $y)", raw"(rare $x)"])
+        @test loop.attention[raw"(edge $x $y)"] ≈ 0.75
+        @test loop.attention[raw"(rare $x)"] ≈ 0.25
+        @test sum(values(loop.attention)) ≈ 1.0          # §5.5 conservation: STI sums to unity
+        @test loop.tick == 1
+        # focus_threshold drops the low-STI atom (rare 0.25)
+        @test attention_step!(loop; rent=0.0, focus_threshold=0.5) == [raw"(edge $x $y)"]
+    end
+
     @testset "ambient loop — minimal mining slice (§4 / §7.3 support)" begin
         b = MockBackend(Dict(raw"(edge $x $y)" => 3, raw"(rare $x)" => 1))
         loop = CognitiveLoop(; backend=b)

@@ -49,14 +49,17 @@ function wm_query end
 """
     CognitiveLoop(; backend=nothing)
 
-The PRIMUS two-loop cognitive cycle (Whitepaper §4) over a pluggable `backend::AbstractBackend`. Advance
-it with [`goal_step!`](@ref) (goal-directed loop) and [`ambient_step!`](@ref) (ambient background loop).
+The PRIMUS two-loop cognitive cycle (Whitepaper §4) over a pluggable `backend::AbstractBackend`. Holds the
+live `attention` state (ECAN STI per atom) and a `tick` counter. Advance it with [`attention_step!`](@ref)
+→ [`ambient_step!`](@ref) → [`blend_step!`](@ref) → [`pln_step!`](@ref) (the ambient loop), and
+[`goal_step!`](@ref) (the goal-directed loop).
 
-Scaffold: substrate Spaces, component handles, and loop state are added scenario-driven (`docs/decisions.md`).
+Scaffold: substrate Spaces and further component handles are added scenario-driven (`docs/decisions.md`).
 """
 Base.@kwdef mutable struct CognitiveLoop{B}
     backend::B = nothing
     tick::Int = 0
+    attention::Dict{String, Float64} = Dict{String, Float64}()
 end
 
 const _UNWIRED = "not yet wired — WorldModel is a scaffold; see docs/decisions.md for the wiring plan"
@@ -68,6 +71,42 @@ Advance the goal-directed loop one step: MetaMo motives → PLN explainable chai
 proposal → PC forecasts → SubRep option certification. Stub until wired scenario-driven.
 """
 goal_step!(::CognitiveLoop) = error("WorldModel.goal_step!: ", _UNWIRED)
+
+"""
+    attention_step!(loop; boost=Dict(), rent=0.1, focus_threshold=0.0) -> Vector{String}
+
+The ambient loop's first step — ECAN attention diffusion (Hyperon Whitepaper 2025 §4 / §5.5). Updates the
+loop's STI (short-term importance) over atoms: decays everything by `rent` (economic forgetting), adds
+`boost` (wages for atoms that proved useful), then NORMALIZES so STI sums to unity — the §5.5 constraint
+that "STI must sum to unity across the attentional focus" (the conservation / budget law). Returns the
+**attentional focus**: atoms with STI strictly above `focus_threshold` — the candidates the rest of the
+ambient loop (mining → blending → factor-PLN) should spend effort on.
+
+Minimal slice: rent-decay + wage-boost + normalization → focus. Full Hebbian spreading-activation over a
+link graph (§5.5; `Core/lib/ecan` `ecan-spread-step!`, MORKTensorNetworks `ecan_sti_spread!`) is richer.
+"""
+function attention_step!(
+    loop::CognitiveLoop;
+    boost::AbstractDict=Dict{String, Float64}(),
+    rent::Real=0.1,
+    focus_threshold::Real=0.0
+)
+    sti = loop.attention
+    for k in keys(sti)
+        sti[k] *= (1 - rent)                              # rent: economic decay (forgetting)
+    end
+    for (k, v) in boost
+        sti[k] = get(sti, k, 0.0) + v                     # wages: boost useful atoms
+    end
+    total = sum(values(sti); init=0.0)
+    if total > 0
+        for k in keys(sti)
+            sti[k] /= total                               # conservation: STI sums to unity (§5.5)
+        end
+    end
+    loop.tick += 1
+    return sort!(String[k for (k, v) in sti if v > focus_threshold])
+end
 
 """
     ambient_step!(loop; candidates=String[], minsup=2) -> Vector{String}
@@ -155,7 +194,7 @@ function pln_step!(
     return beliefs
 end
 
-export AbstractBackend,
-    wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!, blend_step!, pln_step!
+export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!
+export attention_step!, ambient_step!, blend_step!, pln_step!
 
 end # module WorldModel
