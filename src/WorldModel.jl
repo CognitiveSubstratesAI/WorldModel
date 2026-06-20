@@ -28,7 +28,7 @@ const WORLDMODEL_VERSION = v"0.1.0"
 
 The seam between the standalone WorldModel application and whatever substrate runs underneath. A backend
 provides the capabilities the cognitive loop needs — at minimum [`wm_eval`](@ref) (evaluate a MeTTa
-program) and [`wm_query`](@ref) (match a pattern). Concrete backends live OUTSIDE this package (a
+program) and [`wm_query`](@ref) (support count of a pattern). Concrete backends live OUTSIDE this package (a
 MeTTaCore in-process adapter, a server client, or a test mock), so WorldModel itself never takes a hard
 dependency on the substrate and remains usable on its own.
 """
@@ -37,7 +37,11 @@ abstract type AbstractBackend end
 "`wm_eval(backend, program)` — evaluate a MeTTa/program string on `backend`. Defined by a backend adapter."
 function wm_eval end
 
-"`wm_query(backend, pattern)` — match `pattern` on `backend`. Defined by a backend adapter."
+"""
+`wm_query(backend, pattern)` — SUPPORT count: how many atoms match `pattern` on `backend` (Hyperon
+Whitepaper 2025 §7.3 `support`/`match-count`, counted without materializing the matches). Returns an
+`Integer`. Defined by a backend adapter.
+"""
 function wm_query end
 
 # ── The two-loop cognitive cycle ─────────────────────────────────────────────────────────────────────
@@ -66,12 +70,28 @@ proposal → PC forecasts → SubRep option certification. Stub until wired scen
 goal_step!(::CognitiveLoop) = error("WorldModel.goal_step!: ", _UNWIRED)
 
 """
-    ambient_step!(loop)
+    ambient_step!(loop; candidates=String[], minsup=2) -> Vector{String}
 
-Advance the ambient background loop one step: ECAN attention diffusion → pattern mining (WILLIAM) →
-concept blending → factor-graph PLN belief tightening. Stub until wired scenario-driven.
+One step of the ambient background loop (Hyperon Whitepaper 2025 §4): pattern mining **"spots recurring
+structures"**. For each candidate pattern, read its support via the backend (the §7.3 `support` /
+`match-count` op = [`wm_query`](@ref)), keep those with support `≥ minsup`, advance the loop tick, and
+return the frequent (recurring) patterns.
+
+This is the minimal mining slice of the ambient loop (ECAN → mining → concept blending → factor-PLN);
+attention diffusion (ECAN), concept blending (`expand-conjunction`), and belief tightening (factor-PLN)
+are later slices. Runs against any [`AbstractBackend`](@ref).
 """
-ambient_step!(::CognitiveLoop) = error("WorldModel.ambient_step!: ", _UNWIRED)
+function ambient_step!(
+    loop::CognitiveLoop;
+    candidates::AbstractVector{<:AbstractString}=String[],
+    minsup::Integer=2
+)
+    loop.backend === nothing &&
+        error("WorldModel.ambient_step!: no backend — inject one (see AbstractBackend)")
+    frequent = String[p for p in candidates if wm_query(loop.backend, p) >= minsup]
+    loop.tick += 1
+    return frequent
+end
 
 export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!
 
