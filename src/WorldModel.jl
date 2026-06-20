@@ -194,7 +194,38 @@ function pln_step!(
     return beliefs
 end
 
+"""
+    run_ambient!(loop; candidates, minsup=2, rent=0.1, focus_threshold=0.0, k=1)
+        -> (; focus, frequent, blends, beliefs)
+
+Run ONE full ambient cycle (Hyperon Whitepaper 2025 §4): **ECAN attention → mining → blending →
+factor-PLN**, threading each step's output into the next and **closing the attention feedback** — the
+believed atoms are waged back into the loop's STI, so useful structure keeps attention across cycles.
+`candidates` are the patterns to consider this cycle (boosted into attention). Returns the cycle's
+attentional `focus`, the `frequent` patterns, the `blends`, and the `beliefs`.
+
+Call it repeatedly (the loop carries its `attention` STI forward) to run the self-feeding ambient loop.
+"""
+function run_ambient!(
+    loop::CognitiveLoop;
+    candidates::AbstractVector{<:AbstractString},
+    minsup::Integer=2,
+    rent::Real=0.1,
+    focus_threshold::Real=0.0,
+    k::Real=1
+)
+    boost = Dict{String, Float64}(string(c) => 1.0 for c in candidates)
+    focus = attention_step!(loop; boost=boost, rent=rent, focus_threshold=focus_threshold)
+    frequent = ambient_step!(loop; candidates=focus, minsup=minsup)
+    blends = blend_step!(loop, frequent; minsup=minsup)
+    beliefs = pln_step!(loop, frequent; k=k)
+    for (p, _n, c) in beliefs
+        loop.attention[p] = get(loop.attention, p, 0.0) + c   # wage: believed atoms keep attention
+    end
+    return (; focus, frequent, blends, beliefs)
+end
+
 export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!
-export attention_step!, ambient_step!, blend_step!, pln_step!
+export attention_step!, ambient_step!, blend_step!, pln_step!, run_ambient!
 
 end # module WorldModel

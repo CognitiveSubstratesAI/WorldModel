@@ -68,6 +68,23 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         @test loop.tick == 1
     end
 
+    @testset "run_ambient! — one full ambient cycle (§4)" begin
+        b = MockBackend(
+            Dict(
+                raw"(edge $x $y)" => 3,
+                raw"(edge $y $z)" => 3,
+                raw"(edge $x $y) (edge $y $z)" => 2   # the 2-hop join body (blend support)
+            )
+        )
+        loop = CognitiveLoop(; backend=b)
+        r = run_ambient!(loop; candidates=[raw"(edge $x $y)", raw"(edge $y $z)"], minsup=2)
+        @test sort(r.focus) == sort([raw"(edge $x $y)", raw"(edge $y $z)"])      # ECAN: both attended
+        @test sort(r.frequent) == sort([raw"(edge $x $y)", raw"(edge $y $z)"])   # mining: both support 3
+        @test r.blends == [raw"(, (edge $x $y) (edge $y $z))"]                   # blend on shared $y
+        @test length(r.beliefs) == 2                                            # factor-PLN
+        @test loop.attention[raw"(edge $x $y)"] > 0    # feedback: believed atom keeps STI next cycle
+    end
+
     @testset "unwired without a backend / goal loop is a stub" begin
         @test_throws ErrorException goal_step!(CognitiveLoop())
         @test_throws ErrorException ambient_step!(CognitiveLoop())   # no backend
