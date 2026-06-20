@@ -1,0 +1,21 @@
+name = "WorldModel"
+uuid = "7caf2b4a-d3da-4904-9952-4838239b5f47"
+authors = ["CognitiveSubstrates AI <contact@cognitivesubstrates.com>"]
+version = "0.1.0"
+
+# WorldModel is an APPLICATION over the CognitiveSubstratesAI substrate, not a reusable library.
+# It composes the kernel + algorithm packages into the live two-loop cognitive system. Those
+# dependencies (MeTTaCore, MetaMo, FabricPC, MORKTensorNetworks, HMH, …) are added scenario-driven
+# via `[sources]` path dev-links + the CI sibling-clone step as the loop wires each component
+# (measure-first, not loop-first-blind). See docs/decisions.md.
+
+[deps]
+
+[compat]
+julia = "1.12"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

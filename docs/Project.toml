@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+WorldModel = "7caf2b4a-d3da-4904-9952-4838239b5f47"
+
+[compat]
+Documenter = "1"
