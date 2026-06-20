@@ -129,7 +129,33 @@ function blend_step!(
     return blends
 end
 
+"""
+    pln_step!(loop, patterns; k=1) -> Vector{Tuple{String,Int,Float64}}
+
+One step of factor-graph PLN belief tightening (Hyperon Whitepaper 2025 §4 / §1b). For each pattern, read
+its evidence count via the backend (support) and derive a count-based **truth value** — the §1b point that
+"evidence counts … fall out from the quantale structure": confidence `= n / (n + k)` rises with evidence
+`n`. Returns `(pattern, count, confidence)` triples — the tightened beliefs.
+
+Minimal slice: the leaf evidence→TV (count-based confidence). The full factor-graph propagation — quantale
+product `⊗` at factor atoms, sum `⊕` at variable atoms over the blends (§1b) — and strength from ±evidence
+are richer slices that the substrate's PLN (`Core/lib/pln`) provides; this slice orchestrates the leaf TVs.
+"""
+function pln_step!(
+    loop::CognitiveLoop, patterns::AbstractVector{<:AbstractString}; k::Real=1
+)
+    loop.backend === nothing &&
+        error("WorldModel.pln_step!: no backend — inject one (see AbstractBackend)")
+    beliefs = Tuple{String, Int, Float64}[]
+    for p in patterns
+        n = wm_query(loop.backend, p)
+        push!(beliefs, (p, n, n / (n + k)))
+    end
+    loop.tick += 1
+    return beliefs
+end
+
 export AbstractBackend,
-    wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!, blend_step!
+    wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!, blend_step!, pln_step!
 
 end # module WorldModel

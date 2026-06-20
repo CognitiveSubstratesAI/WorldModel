@@ -44,6 +44,15 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         @test blend_step!(loop, [raw"(edge $x $y)", raw"(color $z)"]) == String[]
     end
 
+    @testset "factor-PLN — belief tightening (§4 / §1b evidence→TV)" begin
+        b = MockBackend(Dict(raw"(edge $x $y)" => 9, raw"(rare $x)" => 1))
+        loop = CognitiveLoop(; backend=b)
+        beliefs = pln_step!(loop, [raw"(edge $x $y)", raw"(rare $x)"]; k=1)
+        @test beliefs[1] == (raw"(edge $x $y)", 9, 0.9)   # confidence 9/(9+1) rises with evidence
+        @test beliefs[2] == (raw"(rare $x)", 1, 0.5)       # 1/(1+1)
+        @test loop.tick == 1
+    end
+
     @testset "unwired without a backend / goal loop is a stub" begin
         @test_throws ErrorException goal_step!(CognitiveLoop())
         @test_throws ErrorException ambient_step!(CognitiveLoop())   # no backend
