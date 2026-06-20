@@ -93,6 +93,43 @@ function ambient_step!(
     return frequent
 end
 
-export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!
+# the dollar-variables two patterns share — the "generic space" they can blend over
+function _shared_vars(p1::AbstractString, p2::AbstractString)
+    vars(p) = Set(m.match for m in eachmatch(r"\$[A-Za-z0-9_]+", p))
+    return intersect(vars(p1), vars(p2))
+end
+
+"""
+    blend_step!(loop, patterns; minsup=2) -> Vector{String}
+
+One step of concept blending (Hyperon Whitepaper 2025 §4 — "concept blending invents composites").
+Combines pairs of patterns that SHARE A VARIABLE into composite conjunctions: the shared variable is the
+"generic space" the two blend over, and the join `(, P1 P2)` is the category-theoretic **pushout** over
+it (cf. the conceptBlending upstream's colimit blend; §7.3 `expand-conjunction`). Keeps composites whose
+support via the backend ≥ `minsup` — a minimal optimality filter (well-supported, integrated blends).
+Returns the composite blends.
+
+Minimal substrate-native slice: the deterministic pushout-on-shared-vars + support filter, *without* the
+LLM spec/morphism generation of the full category-theoretic pipeline. Richer blends (full colimit; the
+Fauconnier-Turner optimality constraints — integration/topology/unpacking/good-reason) are later slices.
+"""
+function blend_step!(
+    loop::CognitiveLoop, patterns::AbstractVector{<:AbstractString}; minsup::Integer=2
+)
+    loop.backend === nothing &&
+        error("WorldModel.blend_step!: no backend — inject one (see AbstractBackend)")
+    blends = String[]
+    n = length(patterns)
+    for i in 1:n, j in (i + 1):n
+        isempty(_shared_vars(patterns[i], patterns[j])) && continue
+        body = string(patterns[i], " ", patterns[j])
+        wm_query(loop.backend, body) >= minsup && push!(blends, string("(, ", body, ")"))
+    end
+    loop.tick += 1
+    return blends
+end
+
+export AbstractBackend,
+    wm_eval, wm_query, CognitiveLoop, goal_step!, ambient_step!, blend_step!
 
 end # module WorldModel

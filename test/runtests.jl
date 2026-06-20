@@ -33,6 +33,17 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         @test loop.tick == 2
     end
 
+    @testset "concept blending — minimal pushout slice (§4 / category-theoretic)" begin
+        # (edge $x $y) & (edge $y $z) share $y (the generic space) → blend; the join body has support 2
+        b = MockBackend(Dict(raw"(edge $x $y) (edge $y $z)" => 2))
+        loop = CognitiveLoop(; backend=b)
+        @test blend_step!(loop, [raw"(edge $x $y)", raw"(edge $y $z)"]; minsup=2) ==
+            [raw"(, (edge $x $y) (edge $y $z))"]
+        @test loop.tick == 1
+        # (edge $x $y) & (color $z) share NO variable → no blend (empty generic space)
+        @test blend_step!(loop, [raw"(edge $x $y)", raw"(color $z)"]) == String[]
+    end
+
     @testset "unwired without a backend / goal loop is a stub" begin
         @test_throws ErrorException goal_step!(CognitiveLoop())
         @test_throws ErrorException ambient_step!(CognitiveLoop())   # no backend
