@@ -16,8 +16,11 @@
 #                        a HETEROGENEOUS braid (each Space on its own substrate), wired by the bridging
 #                        operators Γ/Λ/𝓔/𝓓/𝓤 + observe/act/summarize. Algorithms = per-Space processes.
 #
-# STATUS: the ambient loop is complete + self-feeding; the goal loop has its first slices (one-hop
-# goal_step! + multi-hop plan_goal! backward chaining). Wired SCENARIO-DRIVEN (Minecraft affordance
+# STATUS: the INFRASTRUCTURE SKELETON is built — 14-Space registry (wm_space/Spaces/init_spaces!) + the
+# braid operators (Γ/Λ/𝓔/𝓓/𝓤 + observe/act/summarize) + the two-loop×three-rate cycle (fast/mid/slow_step!,
+# world_cycle!). SubRep→Sopt is the first bound service; the rest (PLN→Srule, MOSES→Sprog, WILLIAM→Smine,
+# HMH→Shmh, FabricPC→Sdyn, MetaMo→Smotive, kernel→Skernel) bind the same way. The ambient loop is complete
+# + self-feeding; the goal loop has goal_step!/plan_goal!. Wired SCENARIO-DRIVEN (Minecraft affordance
 # discovery / social-robot anti-hallucination), building only the slice a concrete scenario needs.
 
 module WorldModel
