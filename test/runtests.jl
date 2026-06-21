@@ -164,4 +164,39 @@ using Random: MersenneTwister
         r = run_cycle!(loop; observation=obs, t=1.0, fast=2, rng=MersenneTwister(5))
         @test r.tick > t0 && r.slow.consolidated == :template
     end
+
+    @testset "PLN inference over Srule — deduction + action-selection (§4.7, §6.1.4)" begin
+        # PLN deduction matches the Core lib/pln reference example (book §1.4 p.15) → (0.6, 0.3213)
+        d = truth_deduction((s=0.8, c=0.9), (s=0.7, c=0.85), (s=0.6, c=0.8),
+            (s=0.7, c=0.9), (s=0.6, c=0.85))
+        @test isapprox(d.s, 0.6; atol=1e-3) && isapprox(d.c, 0.3213; atol=1e-3)
+        # inconsistent conditional probability → ignorance fallback (1,0)
+        @test truth_deduction((s=0.8, c=0.9), (s=0.7, c=0.85), (s=0.6, c=0.8),
+            (s=0.95, c=0.9), (s=0.6, c=0.85)) == (s=1.0, c=0.0)
+
+        reg3 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg3)
+        # deduction over the real Srule space: nodes + links → derive A⇒C via B
+        assert_belief!(reg3, "A", 0.8, 0.9, 0.0)
+        assert_belief!(reg3, "B", 0.7, 0.85, 0.0)
+        assert_belief!(reg3, "C", 0.6, 0.8, 0.0)
+        assert_implication!(reg3, "A", "B", 0.7, 0.9, 0.0)
+        assert_implication!(reg3, "B", "C", 0.6, 0.85, 0.0)
+        ac = deduce(reg3, "A", "B", "C")
+        @test isapprox(ac.s, 0.6; atol=1e-3) && isapprox(ac.c, 0.3213; atol=1e-3)
+
+        # action-selection: rules concluding the goal, ranked by expected payoff s·c
+        assert_implication!(reg3, "chop", "wood", 0.9, 0.8, 0.0)
+        assert_implication!(reg3, "mine", "wood", 0.5, 0.6, 0.0)
+        acts = select_action(reg3, "wood")
+        @test acts[1][1] == "chop" && acts[2][1] == "mine"      # chop 0.72 > mine 0.30
+
+        # the goal loop uses it: mid_step! with a goal returns the PLN-selected action
+        loop3 = CognitiveLoop(reg3)
+        obs3 = Observation(
+            "f", "vision", "u", "(entity u block)", :e, Dict(:item => (:block, :u))
+        )
+        rr = mid_step!(loop3, obs3; goal="wood")
+        @test rr.action !== nothing && rr.action[1] == "chop"
+    end
 end

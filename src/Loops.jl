@@ -16,6 +16,7 @@ using ..Braid:
 using ..Beliefs: stale_beliefs
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
+using ..PLN: select_action
 
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 
@@ -64,10 +65,13 @@ end
 
 MID path (§3.4 / §6.1.4): the GOAL-directed cycle — store evidence (Sevid), ground the entity (Γ → Sent,
 evidence-anchored), encode the trial as an HMH episode (𝓔ₕₘₕ → Shmh), and lift the densified retrieval into
-a context vector (Λ → Sctx) that becomes the loop's current context for the fast reflex. Returns the
-artifacts `(; cid, context, context_vector)`. Action-selection (PLN over Srule) plugs in here.
+a context vector (Λ → Sctx) that becomes the loop's current context for the fast reflex. When a `goal` is
+given, PLN backward-chains over Srule to SELECT an action (`(action, stv)` best-first, or `nothing`).
+Returns `(; cid, context, context_vector, action)`.
 """
-function mid_step!(loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx)
+function mid_step!(
+    loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx, goal=nothing
+)
     reg = loop.reg
     cid = store_evidence!(reg, obs.payload; modality=obs.modality)
     ground!(reg, obs.entity_key, obs.entity_atom, cid)
@@ -75,7 +79,13 @@ function mid_step!(loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx)
     v = lift!(reg, ctx_key, obs.slots)
     loop.context = ctx_key
     loop.tick += 1
-    return (; cid=cid, context=ctx_key, context_vector=v)
+    acts = goal === nothing ? [] : select_action(reg, goal)   # PLN action-selection over Srule
+    return (;
+        cid=cid,
+        context=ctx_key,
+        context_vector=v,
+        action=(isempty(acts) ? nothing : first(acts))
+    )
 end
 
 """
@@ -102,11 +112,11 @@ One full multi-rate cycle (§3.1 × §3.4): `fast` Sdyn reflex steps, then one g
 `observation` is supplied), then one ambient slow-step at time `t`. Returns `(; mid, slow, tick)`.
 """
 function run_cycle!(loop::CognitiveLoop; observation::Union{Observation, Nothing}=nothing,
-    t::Real=0.0, fast::Int=2, kwargs...)
+    goal=nothing, t::Real=0.0, fast::Int=2, kwargs...)
     for _ in 1:fast
         fast_step!(loop; kwargs...)
     end
-    mid = observation === nothing ? nothing : mid_step!(loop, observation)
+    mid = observation === nothing ? nothing : mid_step!(loop, observation; goal=goal)
     slow = slow_step!(loop; t=t)
     return (; mid=mid, slow=slow, tick=loop.tick)
 end
