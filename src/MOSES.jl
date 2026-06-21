@@ -14,7 +14,7 @@ module MOSES
 using ..Registry: SpaceRegistry, add!, query_head
 using Random: AbstractRNG, default_rng
 
-export synthesize!, programs
+export synthesize!, geo_synthesize!, programs
 
 _to_atom(prog::Vector{String}) = "(program (" * join(prog, " ") * "))"
 
@@ -60,6 +60,25 @@ function synthesize!(reg::SpaceRegistry, fitness,
     end
     add!(reg, into, _to_atom(best))
     return (best, bestf)
+end
+
+"""
+    geo_synthesize!(reg, fitness, weakness, primitives; gamma=0.3, kwargs...) -> (best, F_eff, F, W)
+
+GEO-EVO program synthesis (Geo-Evo §3.1/§3.10 — the weakness-regularizer-everywhere core): evolve programs
+under the EFFECTIVE fitness `F_eff = F − γ·W`, where `weakness::Vector{String}->Real` is the
+complexity/fragility/overfit regularizer (the geodesic Occam prior that steers toward robust near-optima,
+not fragile high-fitness ones). Returns the best program and its `(F_eff, F, W)`.
+
+HONEST DEPTH LIMIT: GEO-EVO's full two-ends-of-the-path co-adaptation — backward SubRep/PLN subgoal demes,
+deme↔subgoal Sinkhorn pairing, corridor tracking, the Schrödinger-bridge action functional — is the deeper
+system (Geo-Evo.pdf). This is the effective-fitness core, not faked as the full method.
+"""
+function geo_synthesize!(reg::SpaceRegistry, fitness, weakness,
+    primitives::AbstractVector{<:AbstractString}; gamma::Real=0.3, kwargs...)
+    feff(p) = float(fitness(p)) - gamma * float(weakness(p))
+    best, _ = synthesize!(reg, feff, primitives; kwargs...)
+    return (best, feff(best), float(fitness(best)), float(weakness(best)))
 end
 
 "The synthesized program atoms currently in Sprog."

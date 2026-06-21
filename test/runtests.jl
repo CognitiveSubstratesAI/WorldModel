@@ -252,4 +252,35 @@ using Random: MersenneTwister
         @test best == target && f == length(target)            # found the optimum
         @test !isempty(programs(reg7))                         # stored in Sprog
     end
+
+    @testset "GEO-EVO synthesis over Sprog — weakness-regularized effective fitness (§3.1/§3.10)" begin
+        reg8 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg8)
+        # base fitness = adequacy (contains the key action); weakness = length (complexity/fragility).
+        # F_eff = F − γW makes the geodesic prefer the WEAKEST-adequate (shortest robust) program.
+        base(p) = ("open" in p) ? 1.0 : 0.0
+        weak(p) = length(p)
+        best, feff, F, W = geo_synthesize!(reg8, base, weak, ["open", "noop", "close"];
+            gamma=0.3, pop=24, gens=30, rng=MersenneTwister(11))
+        @test "open" in best && F == 1.0                       # adequate
+        @test W <= 2                                           # geodesic Occam prior → short/robust
+        @test !isempty(programs(reg8))
+    end
+
+    @testset "TransWeave transfer over Sxfer — BD-residual order-effect certificate (App D, R9)" begin
+        reg9 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg9)
+        # a source belief + a target domain that AGREES → small BD residual → safe transfer
+        assert_belief!(reg9, "wetGrass_src", 0.8, 0.9, 0.0)
+        assert_belief!(reg9, "wetGrass_tgt", 0.75, 0.85, 0.0)
+        add_correspondence!(reg9, "rainworld", "wetGrass_src", "wetGrass_tgt")
+        @test isapprox(bd_residual(reg9, "rainworld", "wetGrass_src"), 0.05; atol=1e-9)
+        @test admit_transfer!(reg9, "rainworld", "wetGrass_src"; eps=0.1) == true
+        @test !isempty(transfers(reg9))
+        # a brittle transfer (target disagrees strongly) is REJECTED, not silently applied
+        assert_belief!(reg9, "snow_tgt", 0.2, 0.8, 0.0)
+        add_correspondence!(reg9, "badmap", "wetGrass_src", "snow_tgt")
+        @test bd_residual(reg9, "badmap", "wetGrass_src") > 0.5
+        @test admit_transfer!(reg9, "badmap", "wetGrass_src"; eps=0.1) == false
+    end
 end

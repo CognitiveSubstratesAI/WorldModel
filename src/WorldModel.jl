@@ -6,15 +6,14 @@
 # identifiers, are created/deleted at RUNTIME (never hardcoded), persist to disk, and are queried by
 # prefix-anchored zipper walks (derive-by-query).
 #
-# Layering (one concern per file):
-#   Manifest   — config-driven paths/store/.act locations
-#   Substrate  — the ONLY module touching MORK/PathMap (trie ops, .act persistence, prefix walks)
-#   Registry   — the dynamic Space registry (logical layer)
-#   Schema     — the 14 canonical Spaces as DATA + seeding
+# Layering (one concern per file): substrate adapters (Substrate=MORK/PathMap, HMHStore=HMH/FactorVSA,
+# Dense=FabricPC, Kernel=MORKTensorNetworks) → Registry (dynamic Space registry) → Schema (14 Spaces as
+# data) → Braid (Γ/Λ/𝓔/𝓓/μR inter-space flows) → Beliefs (TV/staleness) → the algorithm PROCESSES (PLN,
+# SubRep, Mining=WILLIAM, MetaMo, MOSES/GEO-EVO, TransWeave) → Loops (two-loop × three-rate cycle).
 #
-# STATUS: infrastructure spine (dynamic persistent Space registry). Next: prefix-anchored query layer,
-# then the Γ/Λ bridging braid + two-loop scaffold; algorithms (PLN, SubRep, MOSES, …) are per-Space
-# processes bound last, after the infra is solid.
+# STATUS: complete at the architecture level — 14 Spaces (real substrate) → braid → two-loop → 7 per-Space
+# processes, all on the live stack, no mocks. Remaining is hardening (train Sdyn; .act-persist HMH/dense)
+# and the in-code documented depth-limits of MOSES/MetaMo/GEO-EVO/TransWeave.
 
 module WorldModel
 
@@ -34,6 +33,7 @@ include("SubRep.jl")
 include("Mining.jl")
 include("MetaMo.jl")
 include("MOSES.jl")
+include("TransWeave.jl")
 include("Loops.jl")
 
 using .Manifest
@@ -50,6 +50,7 @@ using .SubRep
 using .Mining
 using .MetaMo
 using .MOSES
+using .TransWeave
 using .Loops
 
 # ── Public surface ────────────────────────────────────────────────────────────────────────────────
@@ -81,8 +82,11 @@ export cds_margin, cds_admit, admit_option!, admitted_options, reuse_options
 export mine!, mined_patterns
 # MetaMo — the motive governor over Smotive (appraise → damp → decide)
 export set_motive!, motives, govern!, dominant_motive
-# MOSES — evolutionary program synthesis over Sprog
-export synthesize!, programs
+# MOSES / GEO-EVO — evolutionary program synthesis over Sprog (geo = weakness-regularized)
+export synthesize!, geo_synthesize!, programs
+# TransWeave — transfer/composition over Sxfer (BD-residual bounded-order-effect certificate, R9)
+export add_correspondence!,
+    correspondence, transfer, bd_residual, admit_transfer!, transfers
 # Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 # Beliefs — truth values + staleness on the symbolic core (R10)
