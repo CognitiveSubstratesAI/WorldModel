@@ -34,3 +34,32 @@ WorldModel.wm_eval(b::MeTTaCoreBackend, program::AbstractString) =
 # Query: number of atoms matching `pattern` (read-only native trie query; dollar-var pattern).
 WorldModel.wm_query(b::MeTTaCoreBackend, pattern::AbstractString) =
     MeTTaCore.pattern_support_native(b.space, pattern)
+
+# Space factory (§4.2): symbolic/evidence Spaces → a distinct MORK CoreSpace; dense/hmh/io are backed by
+# other substrates (FabricPC/HMH/scenario) — here the shared space stands in as a placeholder.
+function WorldModel.wm_space(b::MeTTaCoreBackend, name::Symbol, kind::WorldModel.SpaceKind)
+    (kind == WorldModel.SYMBOLIC || kind == WorldModel.EVIDENCE) &&
+        return MeTTaCore.new_core_space()
+    return b.space
+end
+
+# SubRep admission gate (§A.10): Core's lib/subrep CDS gate runs on the Interpreter (stdlib + the gate
+# rules), cached once — `cds-margin-simplex` is a defined function, so it needs the rule-evaluation path
+# (not the dual-track `mc_run` data path). Sopt's certificate-checking process.
+const _GATE = Ref{Any}(nothing)
+function _gate_space()
+    if _GATE[] === nothing
+        sp = MeTTaCore.Interpreter.Space()
+        MeTTaCore.Interpreter.StandardMeTTa.load_core_stdlib!(sp)
+        MeTTaCore.Interpreter.StandardMeTTa.load_metta!(
+            sp, read(joinpath(pkgdir(MeTTaCore), "lib", "subrep", "cds.metta"), String))
+        _GATE[] = sp
+    end
+    return _GATE[]
+end
+function WorldModel.wm_admit(::MeTTaCoreBackend, dr, dn, eps)
+    s = "(" * join(string.(dn), " ") * ")"
+    rs = MeTTaCore.Interpreter.StandardMeTTa.load_metta!(
+        _gate_space(), "!(cds-admit (cds-margin-simplex $dr $s) (- 0 $eps))")
+    return any(r -> occursin("True", string(r)), rs)
+end

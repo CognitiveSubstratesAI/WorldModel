@@ -20,6 +20,8 @@ WorldModel.unbind(::MockBackend, item) = [:cand1]
 WorldModel.lift(::MockBackend, spaces, atoms) = (Float32[1.0, 0.0], :gating)
 WorldModel.summarize(::MockBackend, items) = Float32[0.5]
 WorldModel.act!(::MockBackend, spaces, action) = action
+# the mock SubRep gate = the real simplex CDS itself: admit iff Δr + min_i Δn_i ≥ −ε.
+WorldModel.wm_admit(::MockBackend, dr, dn, eps) = (Float64(dr) + minimum(dn)) >= -eps
 
 @testset "WorldModel (standalone scaffold)" begin
     @test WorldModel.WORLDMODEL_VERSION == v"0.1.0"
@@ -64,6 +66,21 @@ WorldModel.act!(::MockBackend, spaces, action) = action
         @test c == Float32[1.0, 0.0] && g == :gating
         @test summarize(b, [h]) == Float32[0.5]      # kernel/MKME μ_R
         @test act!(b, spaces, :move) == :move        # Sdyn → Senv (a_t)
+    end
+
+    @testset "Sopt — SubRep admission bound into the options Space (§A.10)" begin
+        # The session's SubRep gate is now a Space service: admission certifies options into Sopt, and
+        # selection retrieves them under the current motive weights (zero-shot under a motive shift).
+        b = MockBackend()
+        loop = CognitiveLoop(; backend=b, spaces=init_spaces!(b))
+        @test admit_option!(loop, :skillA, 0.5, [0.25, 0.25]) == true   # helps both motives → admit
+        @test admit_option!(loop, :skillB, 0.0, [0.3, -0.5]) == false   # badly hurts motive-2 → reject
+        @test length(loop.sopt) == 1                                     # only A certified into Sopt
+        @test admit_option!(loop, :skillC, 0.0, [0.3, -0.05]; eps=0.1) == true  # complementary, budgeted
+        ids = [o.id for o in select_options(loop, [1.0, 0.0])]           # under a motive-1 weighting
+        @test :skillA in ids && :skillC in ids
+        # shift the motive weights → re-select from the SAME certificates, no recertification
+        @test :skillA in [o.id for o in select_options(loop, [0.0, 1.0])]
     end
 
     @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin

@@ -129,6 +129,7 @@ Base.@kwdef mutable struct CognitiveLoop{B}
     spaces::Union{Nothing, Spaces} = nothing
     tick::Int = 0
     attention::Dict{String, Float64} = Dict{String, Float64}()
+    sopt::Vector{Any} = []   # Sopt contents: SubRep-certified options (id, Δr, Δn)
 end
 
 # ── Bridging operators — the EDGES of the inter-space braid (§4.3–4.6, the diagram) ──────────────────
@@ -170,6 +171,41 @@ function lift end
 "Kernel/MKME (§4.5, App C): `summarize(backend, items)` — set→vector: kernel-mean / MKME summary `μ_R` of
 a set of (HMH/symbolic) items, with relevance weights for gating + re-ranking (the cross-cutting layer)."
 function summarize end
+
+# ── Sopt — the certified-options Space: SubRep admission bound in (§A.10, §4.9) ──────────────────────
+#
+# Sopt holds reusable skills/macros admitted via SubRep certification; its dominant processes are option
+# selection + CERTIFICATE CHECKING. This binds the Core SubRep gate (lib/subrep) as the first algorithm
+# service in the braid — the session's CDS/PDS work, finally with a home.
+
+"`wm_admit(backend, Δr, Δn, ε)` → Bool: run the SubRep CDS admission gate (Core `lib/subrep`). Admit the
+option iff it beats the baseline over the motive cone (margin ≥ −ε). The backend backs this with the gate."
+function wm_admit end
+
+"""
+    admit_option!(loop, id, Δr, Δn; ε=0.0) -> Bool
+
+Sopt's admission process (§A.10 / §4.9): screen an option — its expectation-model improvement `(Δr, Δn)`
+over the baseline — through the SubRep CDS gate ([`wm_admit`](@ref)); if it passes, store the certified
+option in Sopt (`loop.sopt`). Returns whether it was admitted. The certificate survives composition (§7.1).
+"""
+function admit_option!(loop::CognitiveLoop, id, dr, dn; eps::Real=0.0)
+    admitted = wm_admit(loop.backend, dr, dn, eps)
+    admitted && push!(loop.sopt, (; id=id, dr=Float64(dr), dn=collect(Float64, dn)))
+    return admitted
+end
+
+"""
+    select_options(loop, w; thresh=0.0) -> Vector
+
+Sopt's option-selection process (§A.10): under the CURRENT motive weights `w`, return the certified options
+whose backed-up improvement `Δr + wᵀΔn ≥ thresh`, best first — zero-shot reuse of the SAME certificates
+under a motive shift, with no recertification (mirrors `Core/lib/subrep/store.metta`)."""
+function select_options(loop::CognitiveLoop, w::AbstractVector; thresh::Real=0.0)
+    scored = [(o, o.dr + sum(w .* o.dn)) for o in loop.sopt]
+    sort!(scored; by=x -> -x[2])
+    return [o for (o, v) in scored if v >= thresh]
+end
 
 # split a conjunction "(, P1 P2 …)" into its clause strings (ASCII s-expressions)
 function _conj_clauses(s::AbstractString)
@@ -488,5 +524,6 @@ export attention_step!, ambient_step!, blend_step!, pln_step!, run_ambient!
 export SpaceKind, SYMBOLIC, DENSE, HMH, EVIDENCE, ENVIO, WM_SPACES
 export wm_space, Spaces, init_spaces!, space, space_kind
 export observe!, act!, ground!, encode_hmh!, densify, unbind, lift, summarize
+export wm_admit, admit_option!, select_options
 
 end # module WorldModel
