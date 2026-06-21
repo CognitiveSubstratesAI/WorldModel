@@ -85,8 +85,24 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         @test loop.attention[raw"(edge $x $y)"] > 0    # feedback: believed atom keeps STI next cycle
     end
 
-    @testset "unwired without a backend / goal loop is a stub" begin
-        @test_throws ErrorException goal_step!(CognitiveLoop())
-        @test_throws ErrorException ambient_step!(CognitiveLoop())   # no backend
+    @testset "goal loop — affordance-based planning (§4 goal-directed)" begin
+        loop = CognitiveLoop(; backend=MockBackend())
+        affordances = [raw"(, (chop $o) (yields $o $r))", raw"(, (mine $o) (yields $o $r))"]
+        beliefs = Dict(
+            raw"(, (chop $o) (yields $o $r))" => 0.75,
+            raw"(, (mine $o) (yields $o $r))" => 0.6
+        )
+        # goal: achieve a "yields" outcome → propose the actions, certified by belief, best first
+        opts = goal_step!(
+            loop, raw"(yields $o wood)"; affordances=affordances, beliefs=beliefs
+        )
+        @test opts == [(raw"(chop $o)", 0.75), (raw"(mine $o)", 0.6)]   # both yield; chop more certified
+        @test loop.tick == 1
+        @test goal_step!(loop, raw"(flies $o)"; affordances=affordances) ==
+            Tuple{String, Float64}[]  # no match
+    end
+
+    @testset "ambient steps require a backend" begin
+        @test_throws ErrorException ambient_step!(CognitiveLoop())
     end
 end

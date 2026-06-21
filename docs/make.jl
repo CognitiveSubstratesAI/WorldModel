@@ -1,4 +1,5 @@
 using Documenter
+using DocumenterMermaid
 using WorldModel
 
 DocMeta.setdocmeta!(WorldModel, :DocTestSetup, :(using WorldModel); recursive=true)
@@ -16,6 +17,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Scenario: Affordance Discovery" => "scenarios.md",
         "Architecture Decision" => "decisions.md",
         "API Reference" => "api.md"
     ],

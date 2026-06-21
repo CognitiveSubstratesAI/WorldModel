@@ -28,5 +28,14 @@ building only the slice a concrete scenario needs, never loop-first-blind. See t
 
 ## Status
 
-Scaffold. The [`CognitiveLoop`](@ref) and its `goal_step!` / `ambient_step!` are skeletons; the
-pluggable-backend seam is in place and tested against a mock backend.
+The **ambient loop** is complete and self-feeding — [`attention_step!`](@ref) (ECAN) →
+[`ambient_step!`](@ref) (mining) → [`blend_step!`](@ref) (blending) → [`pln_step!`](@ref) (factor-PLN),
+orchestrated by [`run_ambient!`](@ref), which closes the feedback (believed atoms are waged back as
+attention). The **goal-directed loop** has its first slice — [`goal_step!`](@ref) plans toward a goal over
+the discovered affordances, certified against the substrate. Both are demonstrated end-to-end on a working
+scenario (see [Affordance Discovery](scenarios.md)).
+
+Each step is the *minimal substrate-native slice* of its §4 component; richer slices live in the substrate
+libraries and are wired in scenario-driven. The pluggable-backend seam is tested against a mock backend
+(WorldModel runs standalone) and every slice is smoke-tested end-to-end through the real `MeTTaCore`
+substrate.

@@ -19,9 +19,9 @@ const AFFORDANCE_DATA = join(
         "(chop tree2)", "(yields tree2 wood)",
         "(chop tree3)", "(yields tree3 wood)",
         "(mine rock1)", "(yields rock1 stone)",
-        "(mine rock2)", "(yields rock2 stone)",
+        "(mine rock2)", "(yields rock2 stone)"
     ],
-    "\n",
+    "\n"
 )
 
 # The action/outcome regularities the agent considers.
@@ -40,8 +40,26 @@ function run_affordance_demo(; cycles::Int=2)
         println("  affordances (blends): ", result.blends)
         println(
             "  beliefs:              ",
-            [(p, round(conf; digits=2)) for (p, n, conf) in result.beliefs],
+            [(p, round(conf; digits=2)) for (p, n, conf) in result.beliefs]
         )
     end
     return result
+end
+
+"""
+Discover affordances (the AMBIENT loop), then plan toward a `goal` outcome (the GOAL-directed loop).
+Shows the two loops composing: mining → blending invents the affordances, then `goal_step!` (§4
+MetaMo→…→SubRep) backward-looks them up by the goal's outcome and certifies each action against the
+substrate. Default goal = "get wood".
+"""
+function run_goal_demo(goal::AbstractString=raw"(yields $o wood)")
+    backend = MeTTaCoreBackend()
+    wm_eval(backend, AFFORDANCE_DATA)
+    loop = CognitiveLoop(; backend=backend)
+    r = run_ambient!(loop; candidates=CANDIDATES, minsup=2)       # ambient: discover affordances
+    opts = goal_step!(loop, goal; affordances=r.blends)           # goal: plan + certify toward the goal
+    println("goal:        ", goal)
+    println("affordances: ", r.blends)
+    println("plan:        ", [(a, round(c; digits=2)) for (a, c) in opts])
+    return opts
 end

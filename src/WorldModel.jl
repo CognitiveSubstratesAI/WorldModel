@@ -62,15 +62,80 @@ Base.@kwdef mutable struct CognitiveLoop{B}
     attention::Dict{String, Float64} = Dict{String, Float64}()
 end
 
-const _UNWIRED = "not yet wired — WorldModel is a scaffold; see docs/decisions.md for the wiring plan"
+# split a conjunction "(, P1 P2 …)" into its clause strings (ASCII s-expressions)
+function _conj_clauses(s::AbstractString)
+    s = strip(s)
+    startswith(s, "(,") || return [String(s)]
+    inner = s[3:(end - 1)]                              # drop the leading "(," and trailing ")"
+    clauses = String[]
+    depth = 0
+    buf = IOBuffer()
+    for c in inner
+        if c == '('
+            depth += 1
+            print(buf, c)
+        elseif c == ')'
+            depth -= 1
+            print(buf, c)
+        elseif c == ' ' && depth == 0
+            t = strip(String(take!(buf)))
+            isempty(t) || push!(clauses, t)
+        else
+            print(buf, c)
+        end
+    end
+    t = strip(String(take!(buf)))
+    isempty(t) || push!(clauses, t)
+    return clauses
+end
+
+# the predicate head of a pattern "(pred …)" → "pred"
+function _head(p::AbstractString)
+    m = match(r"^\(\s*([^\s()]+)", strip(p))
+    return m === nothing ? String(strip(p)) : String(m.captures[1])
+end
 
 """
-    goal_step!(loop)
+    goal_step!(loop, goal; affordances, beliefs=Dict()) -> Vector{Tuple{String,Float64}}
 
-Advance the goal-directed loop one step: MetaMo motives → PLN explainable chains → MOSES/GEO-EVO program
-proposal → PC forecasts → SubRep option certification. Stub until wired scenario-driven.
+One step of the goal-directed loop (Hyperon Whitepaper 2025 §4): given a `goal` — a desired outcome
+pattern, the MetaMo *motive* — search the discovered `affordances` (the ambient loop's composites, the
+PLN/knowledge) for ones whose OUTCOME clause matches the goal's predicate, and propose their ACTION
+clause as a program (the MOSES role). Each proposal is CERTIFIED (the SubRep role) by an affordance
+confidence: an explicit override in `beliefs`, else — when a `backend` is wired — the affordance is
+checked against the substrate (support `n` of its join body → §1b confidence `n/(n+1)`), else `1`.
+Returns the certified `(action, confidence)` options, most-certified first.
+
+Minimal slice: affordance-based backward lookup over the ambient loop's output (goal → action), certified
+by substrate support. Full PLN backward chaining, MOSES program search, PC forecasting are richer slices.
 """
-goal_step!(::CognitiveLoop) = error("WorldModel.goal_step!: ", _UNWIRED)
+function goal_step!(
+    loop::CognitiveLoop,
+    goal::AbstractString;
+    affordances::AbstractVector{<:AbstractString},
+    beliefs::AbstractDict=Dict{String, Float64}()
+)
+    gh = _head(goal)
+    options = Tuple{String, Float64}[]
+    for aff in affordances
+        clauses = _conj_clauses(aff)
+        length(clauses) >= 2 || continue
+        action, outcome = clauses[1], clauses[end]
+        _head(outcome) == gh || continue              # the affordance's outcome matches the goal
+        conf = if haskey(beliefs, aff)
+            Float64(beliefs[aff])                     # explicit belief override
+        elseif loop.backend !== nothing
+            n = wm_query(loop.backend, join(clauses, " "))  # SubRep: certify against the substrate
+            n / (n + 1)                                     # §1b evidence → confidence
+        else
+            1.0
+        end
+        push!(options, (action, Float64(conf)))       # propose the action, certified
+    end
+    sort!(options; by=x -> -x[2])                     # most-certified options first
+    loop.tick += 1
+    return options
+end
 
 """
     attention_step!(loop; boost=Dict(), rent=0.1, focus_threshold=0.0) -> Vector{String}
