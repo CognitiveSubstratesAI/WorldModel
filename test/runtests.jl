@@ -83,6 +83,25 @@ WorldModel.wm_admit(::MockBackend, dr, dn, eps) = (Float64(dr) + minimum(dn)) >=
         @test :skillA in [o.id for o in select_options(loop, [0.0, 1.0])]
     end
 
+    @testset "cognitive cycle — two loops × three rates over the braid (§3.1, §3.4)" begin
+        b = MockBackend(Dict(raw"(edge $x $y)" => 3))
+        loop = CognitiveLoop(; backend=b, spaces=init_spaces!(b))
+        admit_option!(loop, :skillA, 0.5, [0.25, 0.25])          # populate Sopt
+        # fast path (ms): observe + act, tick advances, no full Atomspace query
+        t0 = loop.tick
+        @test fast_step!(loop; action=:move) == :move
+        @test loop.tick == t0 + 1
+        # mid path (10s–100s ms): ground (Γ) → lift (Λ) → select a certified option under motives w
+        m = mid_step!(loop, :ev1; w=[1.0, 0.0])
+        @test m.gating == :gating
+        @test :skillA in [o.id for o in m.options]
+        # full multi-rate cycle: fast×mid goal-directed steps + one slow ambient step, end-to-end
+        r = world_cycle!(loop; evidence=:ev1, w=[1.0, 0.0], action=:move,
+            candidates=[raw"(edge $x $y)"], fast=2, mid=2)
+        @test haskey(r, :mid) && haskey(r, :ambient)
+        @test raw"(edge $x $y)" in r.ambient.frequent        # the ambient loop mined the recurring pattern
+    end
+
     @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin
         loop = CognitiveLoop(; backend=MockBackend())
         # boost two atoms, rent 0 → STI = normalized boost (edge 3/4, rare 1/4); focus = both (> 0)

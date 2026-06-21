@@ -207,6 +207,57 @@ function select_options(loop::CognitiveLoop, w::AbstractVector; thresh::Real=0.0
     return [o for (o, v) in scored if v >= thresh]
 end
 
+# ── The cognitive cycle — two loops × three timescales over the braid (§3.1, §3.4) ───────────────────
+#
+# The world model runs two interleaved loops (§3.1) at three rates (§3.4). Each rate-step wires the braid
+# operators + the Space services; `world_cycle!` schedules them. Symbolic reasoning is a SUPERVISOR on an
+# appropriate timescale while the low-latency substrate maintains stability/safety (the fast path).
+
+"""Fast path (§3.4, ms): the Sdyn reflex/servo loop — observe → low-latency control → act, WITHOUT a full
+Atomspace query on each tick. Returns the action issued."""
+function fast_step!(loop::CognitiveLoop; action=:noop)
+    observe!(loop.backend, loop.spaces)              # Senv → Sevid (o_t)
+    act!(loop.backend, loop.spaces, action)          # Sdyn → Senv (a_t), low-latency
+    loop.tick += 1
+    return action
+end
+
+"""Mid path (§3.4, tens–hundreds of ms): the GOAL-directed cycle — ground evidence to atoms (Γ), lift to a
+context vector + gating (Λ, binding a focused subnetwork, §3.1), and select a certified option (Sopt) under
+the current motive weights `w`. Returns `(; atoms, context, gating, options)`."""
+function mid_step!(loop::CognitiveLoop, evidence; w::AbstractVector=Float64[])
+    atoms = ground!(loop.backend, loop.spaces, evidence)       # Γ: Sevid → Sent/Smap/Srule
+    c, g = lift(loop.backend, loop.spaces, atoms)              # Λ: → Sctx context + gating
+    options = isempty(w) ? loop.sopt : select_options(loop, w) # Sopt option selection
+    loop.tick += 1
+    return (; atoms=atoms, context=c, gating=g, options=options)
+end
+
+"""Slow path (§3.4, seconds–hours): the AMBIENT loop — mine patterns, blend concepts, tighten beliefs, and
+consolidate memory ([`run_ambient!`](@ref): ECAN → mining → blending → factor-PLN), in the background."""
+function slow_step!(loop::CognitiveLoop; candidates::AbstractVector=String[], minsup::Int=2)
+    return run_ambient!(loop; candidates=candidates, minsup=minsup)
+end
+
+"""
+    world_cycle!(loop; evidence, w, action, candidates, fast=2, mid=2) -> NamedTuple
+
+One full multi-rate cognitive cycle (§3.1 × §3.4): `fast` fast-steps per mid-step, `mid` goal-directed
+mid-steps, then one slow ambient step. This is the world-model's interleaved goal + ambient loops running
+over the braided Spaces at the three timescales. Returns the last mid result + the ambient result."""
+function world_cycle!(loop::CognitiveLoop; evidence=nothing, w::AbstractVector=Float64[],
+    action=:noop, candidates::AbstractVector=String[], fast::Int=2, mid::Int=2)
+    local mres
+    for _ in 1:mid
+        for _ in 1:fast
+            fast_step!(loop; action=action)
+        end
+        mres = mid_step!(loop, evidence; w=w)
+    end
+    ambient = slow_step!(loop; candidates=candidates)
+    return (; mid=mres, ambient=ambient)
+end
+
 # split a conjunction "(, P1 P2 …)" into its clause strings (ASCII s-expressions)
 function _conj_clauses(s::AbstractString)
     s = strip(s)
@@ -525,5 +576,6 @@ export SpaceKind, SYMBOLIC, DENSE, HMH, EVIDENCE, ENVIO, WM_SPACES
 export wm_space, Spaces, init_spaces!, space, space_kind
 export observe!, act!, ground!, encode_hmh!, densify, unbind, lift, summarize
 export wm_admit, admit_option!, select_options
+export fast_step!, mid_step!, slow_step!, world_cycle!
 
 end # module WorldModel
