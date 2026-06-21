@@ -63,3 +63,34 @@ function run_goal_demo(goal::AbstractString=raw"(yields $o wood)")
     println("plan:        ", [(a, round(c; digits=2)) for (a, c) in opts])
     return opts
 end
+
+# A small crafting hierarchy (domain rules WITH preconditions): planks need wood, wood needs chopping.
+# Rule form `(, PRECOND… ACTION OUTCOME)`: last clause = outcome, second-to-last = action, rest = subgoals.
+const CRAFT_RULES = [
+    raw"(, (chop $o) (yields $o wood))",                            # chop yields wood (a leaf affordance)
+    raw"(, (yields $o wood) (craft $o plank) (yields $o plank))"   # wood + craft yields plank
+]
+
+"""
+Plan a multi-step goal by backward chaining (the goal loop's deeper slice — §4 "PLN supplies explainable
+chains"). From an empty world the planner derives the full chain; with wood already perceived it SKIPS the
+chop (that subgoal is already true in the substrate).
+"""
+function run_plan_demo()
+    fresh = MeTTaCoreBackend()
+    p1 = plan_goal!(
+        CognitiveLoop(; backend=fresh), raw"(yields $o plank)"; affordances=CRAFT_RULES
+    )
+    println(
+        "plan plank (empty world):  ", p1.steps, "  conf=", round(p1.confidence; digits=3)
+    )
+    haswood = MeTTaCoreBackend()
+    wm_eval(haswood, "(yields log wood)")                          # wood already observed
+    p2 = plan_goal!(
+        CognitiveLoop(; backend=haswood), raw"(yields $o plank)"; affordances=CRAFT_RULES
+    )
+    println(
+        "plan plank (wood present): ", p2.steps, "  conf=", round(p2.confidence; digits=3)
+    )
+    return (p1, p2)
+end

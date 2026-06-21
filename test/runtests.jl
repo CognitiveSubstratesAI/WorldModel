@@ -102,6 +102,24 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
             Tuple{String, Float64}[]  # no match
     end
 
+    @testset "goal loop — multi-hop backward chaining (plan_goal!, §4 explainable chains)" begin
+        loop = CognitiveLoop(; backend=MockBackend())
+        R1 = raw"(, (yields $o wood) (craft $o plank) (yields $o plank))"   # plank ⟸ wood + craft
+        R2 = raw"(, (chop $o) (yields $o wood))"                            # wood  ⟸ chop
+        rules = [R1, R2]
+        beliefs = Dict(R1 => 0.9, R2 => 0.8)
+        plan = plan_goal!(loop, raw"(yields $o plank)"; affordances=rules, beliefs=beliefs)
+        @test plan.steps == [raw"(chop $o)", raw"(craft $o plank)"]   # chop (→wood) then craft (→plank)
+        @test plan.confidence ≈ 0.72                                  # 0.9 × 0.8 along the chain
+        @test loop.tick == 1
+        @test plan_goal!(loop, raw"(flies $o)"; affordances=rules) === nothing   # unreachable → nothing
+        # a goal already true in the substrate → no actions needed (base case)
+        loop2 = CognitiveLoop(; backend=MockBackend(Dict(raw"(yields $o wood)" => 5)))
+        p2 = plan_goal!(loop2, raw"(yields $o wood)"; affordances=rules)
+        @test p2.steps == String[]
+        @test p2.confidence == 1.0
+    end
+
     @testset "ambient steps require a backend" begin
         @test_throws ErrorException ambient_step!(CognitiveLoop())
     end

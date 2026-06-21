@@ -14,8 +14,9 @@
 #   Shared controls:     geodesic control · quantale-weakness (Occam prior)
 #   Memory substrate:    13 Spaces (§7 / vibe-eng Appendix A) — Senv/Sevid/Sent/Smap/Srule/Shmh/…
 #
-# STATUS: scaffold. The loop is wired SCENARIO-DRIVEN (Minecraft affordance discovery / social-robot
-# anti-hallucination), building only the slice a concrete scenario needs (measure-first).
+# STATUS: the ambient loop is complete + self-feeding; the goal loop has its first slices (one-hop
+# goal_step! + multi-hop plan_goal! backward chaining). Wired SCENARIO-DRIVEN (Minecraft affordance
+# discovery / social-robot anti-hallucination), building only the slice a concrete scenario needs.
 
 module WorldModel
 
@@ -52,9 +53,9 @@ function wm_query end
 The PRIMUS two-loop cognitive cycle (Whitepaper §4) over a pluggable `backend::AbstractBackend`. Holds the
 live `attention` state (ECAN STI per atom) and a `tick` counter. Advance it with [`attention_step!`](@ref)
 → [`ambient_step!`](@ref) → [`blend_step!`](@ref) → [`pln_step!`](@ref) (the ambient loop), and
-[`goal_step!`](@ref) (the goal-directed loop).
+[`goal_step!`](@ref) / [`plan_goal!`](@ref) (the goal-directed loop).
 
-Scaffold: substrate Spaces and further component handles are added scenario-driven (`docs/decisions.md`).
+Substrate Spaces and further component handles are added scenario-driven (`docs/decisions.md`).
 """
 Base.@kwdef mutable struct CognitiveLoop{B}
     backend::B = nothing
@@ -95,6 +96,18 @@ function _head(p::AbstractString)
     return m === nothing ? String(strip(p)) : String(m.captures[1])
 end
 
+# flat-token structural match: same arity, constants must agree, `$`-tokens are wildcards.
+# (Patterns here are flat s-expressions like `(yields $o wood)`; nesting would be flattened.)
+_tokens(p::AbstractString) = split(replace(strip(p), '(' => ' ', ')' => ' '))
+function _matches(a::AbstractString, b::AbstractString)
+    ta, tb = _tokens(a), _tokens(b)
+    length(ta) == length(tb) || return false
+    for (x, y) in zip(ta, tb)
+        (startswith(x, '$') || startswith(y, '$') || x == y) || return false
+    end
+    return true
+end
+
 """
     goal_step!(loop, goal; affordances, beliefs=Dict()) -> Vector{Tuple{String,Float64}}
 
@@ -115,13 +128,12 @@ function goal_step!(
     affordances::AbstractVector{<:AbstractString},
     beliefs::AbstractDict=Dict{String, Float64}()
 )
-    gh = _head(goal)
     options = Tuple{String, Float64}[]
     for aff in affordances
         clauses = _conj_clauses(aff)
         length(clauses) >= 2 || continue
         action, outcome = clauses[1], clauses[end]
-        _head(outcome) == gh || continue              # the affordance's outcome matches the goal
+        _matches(outcome, goal) || continue           # the affordance's outcome matches the goal
         conf = if haskey(beliefs, aff)
             Float64(beliefs[aff])                     # explicit belief override
         elseif loop.backend !== nothing
@@ -135,6 +147,79 @@ function goal_step!(
     sort!(options; by=x -> -x[2])                     # most-certified options first
     loop.tick += 1
     return options
+end
+
+# belief of an affordance/rule: explicit override, else the prior (rules need not be ground facts)
+_affordance_belief(beliefs, aff, prior) = Float64(get(beliefs, aff, prior))
+
+# recursive backward chaining (no tick mutation — the public plan_goal! ticks once)
+function _plan(loop, g, affordances, beliefs, prior, max_depth, seen)
+    if loop.backend !== nothing && wm_query(loop.backend, g) > 0
+        return (; goal=g, steps=String[], confidence=1.0)          # already true in the substrate
+    end
+    (max_depth <= 0 || g in seen) && return nothing                # depth / cycle guard
+    seen2 = push!(copy(seen), g)
+    best = nothing
+    for aff in affordances
+        clauses = _conj_clauses(aff)
+        length(clauses) >= 2 || continue
+        _matches(clauses[end], g) || continue          # rule's OUTCOME matches the goal
+        action = clauses[end - 1]                      # the action that achieves it
+        preconds = clauses[1:(end - 2)]                # remaining clauses = subgoals
+        steps = String[]
+        conf = _affordance_belief(beliefs, aff, prior)
+        reachable = true
+        for pc in preconds
+            sp = _plan(loop, pc, affordances, beliefs, prior, max_depth - 1, seen2)
+            if sp === nothing
+                reachable = false
+                break
+            end
+            append!(steps, sp.steps)                   # do the subgoal's actions first…
+            conf *= sp.confidence
+        end
+        reachable || continue
+        push!(steps, String(action))                   # …then the action that consumes them
+        cand = (; goal=g, steps=steps, confidence=conf)
+        if best === nothing || cand.confidence > best.confidence
+            best = cand                                # keep the most-certified plan
+        end
+    end
+    return best
+end
+
+"""
+    plan_goal!(loop, goal; affordances, beliefs=Dict(), prior=0.9, max_depth=8)
+        -> Union{Nothing, @NamedTuple{goal::String, steps::Vector{String}, confidence::Float64}}
+
+Multi-hop backward chaining (Hyperon Whitepaper 2025 §4 "PLN supplies explainable chains"; §5.9 Motive
+Decomposition Network; §4 motivational compositionality — "goals decompose and recombine"). Plans an
+ordered sequence of actions achieving `goal` by recursively decomposing it through `affordances` — rules
+of the form `(, PRECOND… ACTION OUTCOME)` (last clause = outcome, second-to-last = action, the rest =
+preconditions / subgoals). A goal already true in the substrate (`wm_query > 0`) is a base case (no
+action). Returns the ordered `steps` (a subgoal's actions before the action that consumes them) and a
+`confidence` = product of the per-rule beliefs along the chain (`beliefs` override, else `prior`); or
+`nothing` if the goal is unreachable within `max_depth` (depth- and cycle-guarded).
+
+Builds on the one-hop [`goal_step!`](@ref): where that proposes a single certified action, this chains
+them into a plan. A no-precondition rule `(, ACTION OUTCOME)` is exactly an ambient-discovered affordance,
+so plans compose the ambient loop's output with richer domain rules. Richer slices (MOSES program
+synthesis, PC forecast-guided search, full PLN strength/confidence) come later.
+"""
+function plan_goal!(
+    loop::CognitiveLoop,
+    goal::AbstractString;
+    affordances::AbstractVector{<:AbstractString},
+    beliefs::AbstractDict=Dict{String, Float64}(),
+    prior::Real=0.9,
+    max_depth::Integer=8
+)
+    plan = _plan(
+        loop, String(strip(goal)), affordances, beliefs, Float64(prior), max_depth,
+        Set{String}()
+    )
+    loop.tick += 1
+    return plan
 end
 
 """
@@ -290,7 +375,7 @@ function run_ambient!(
     return (; focus, frequent, blends, beliefs)
 end
 
-export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!
+export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!, plan_goal!
 export attention_step!, ambient_step!, blend_step!, pln_step!, run_ambient!
 
 end # module WorldModel
