@@ -134,4 +134,34 @@ using Random: MersenneTwister
         # DENSE Spaces still reject MORK atom ops
         @test_throws ErrorException add!(reg, :Sdyn, "(x)")
     end
+
+    @testset "two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4, §6.1.4)" begin
+        reg2 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg2)
+        loop = CognitiveLoop(reg2)
+
+        # MID (goal cycle): Γ-ground entity + 𝓔ₕₘₕ episode + Λ context vector
+        obs = Observation("frame_99_block", "vision", "u9", "(entity u9 unknown-block)",
+            :trialA,
+            Dict(:item => (:block, :u9), :func => (:role, :conductor)))
+        m = mid_step!(loop, obs)
+        @test "(entity u9 unknown-block)" in atoms(reg2, :Sent)     # Γ grounded
+        @test !isempty(fetch_evidence(reg2, m.cid))                 # evidence anchored
+        @test length(m.context_vector) == 1024 && loop.context == :ctx
+
+        # FAST (reflex): no predictor yet → nothing; attach Sdyn predictor → real prediction, no Atomspace query
+        @test fast_step!(loop) === nothing
+        attach_dynamics!(reg2, 1024, 16, 4; rng=MersenneTwister(3))
+        @test length(fast_step!(loop; rng=MersenneTwister(4))) == 4
+
+        # SLOW (ambient): stale-belief re-validation (R10) + HMH consolidation (schema formation)
+        assert_belief!(reg2, "Conductor_u9", 0.6, 0.3, 0.0)
+        s = slow_step!(loop; t=30.0, threshold=0.2, lambda=0.1)
+        @test "Conductor_u9" in s.stale && s.consolidated == :template
+
+        # one full multi-rate cycle advances the tick and runs all three rates
+        t0 = loop.tick
+        r = run_cycle!(loop; observation=obs, t=1.0, fast=2, rng=MersenneTwister(5))
+        @test r.tick > t0 && r.slow.consolidated == :template
+    end
 end

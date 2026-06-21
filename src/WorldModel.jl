@@ -29,6 +29,7 @@ include("Registry.jl")
 include("Schema.jl")
 include("Braid.jl")
 include("Beliefs.jl")
+include("Loops.jl")
 
 using .Manifest
 using .Substrate
@@ -39,6 +40,7 @@ using .Registry
 using .Schema
 using .Braid
 using .Beliefs
+using .Loops
 
 # ── Public surface ────────────────────────────────────────────────────────────────────────────────
 # Config / store
@@ -61,6 +63,8 @@ export lift!, kernel_summary!, attach_dynamics!, predict_dynamics
 export DenseStore, dense_store, get_vec, has_vec, vec_keys, has_predictor
 # Kernel / MKME service (Skernel, MORKTensorNetworks-backed)
 export kernel_mu, gram, mmd
+# Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
+export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 # Beliefs — truth values + staleness on the symbolic core (R10)
 export assert_belief!, beliefs, decayed_confidence, stale_beliefs
 

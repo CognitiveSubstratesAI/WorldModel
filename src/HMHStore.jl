@@ -10,9 +10,10 @@
 module HMHStore
 
 using FactorVSA: HV, BipolarMAP, random_hv
-using HMH: RoleBook, role!, Episode, encode_episode, recover_slot
+using HMH: RoleBook, role!, Episode, encode_episode, recover_slot, consolidate
 
 export HMHIndex, hmh_fresh, store_episode!, retrieve, densify, record_keys, record_pointers
+export consolidate!
 
 const DEFAULT_DIM = 1024
 
@@ -91,5 +92,19 @@ record_pointers(idx::HMHIndex, key::Symbol) = get(idx.pointers, key, String[])
 
 "All stored record keys."
 record_keys(idx::HMHIndex) = sort!(collect(keys(idx.codes)))
+
+"""
+    consolidate!(idx, key) -> key | nothing
+
+Episodic-semantic consolidation (RHMH Eq 77): bundle all stored episodes into one template hypervector
+and store it under `key` — recurring slots reinforce, idiosyncratic ones average out (schema formation).
+The ambient loop's memory-consolidation step. Returns `nothing` if there are no episodes yet.
+"""
+function consolidate!(idx::HMHIndex, key::Symbol)
+    eps = collect(values(idx.episodes))
+    isempty(eps) && return nothing
+    idx.codes[key] = consolidate(eps, idx.rb)
+    return key
+end
 
 end # module HMHStore
