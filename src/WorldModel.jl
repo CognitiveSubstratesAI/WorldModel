@@ -32,6 +32,8 @@ include("Beliefs.jl")
 include("PLN.jl")
 include("SubRep.jl")
 include("Mining.jl")
+include("MetaMo.jl")
+include("MOSES.jl")
 include("Loops.jl")
 
 using .Manifest
@@ -46,6 +48,8 @@ using .Beliefs
 using .PLN
 using .SubRep
 using .Mining
+using .MetaMo
+using .MOSES
 using .Loops
 
 # ── Public surface ────────────────────────────────────────────────────────────────────────────────
@@ -75,6 +79,10 @@ export STV, truth_deduction, node_stv, impl_stv, assert_implication!, deduce, se
 export cds_margin, cds_admit, admit_option!, admitted_options, reuse_options
 # Mining — WILLIAM pattern mining over a Space into Smine
 export mine!, mined_patterns
+# MetaMo — the motive governor over Smotive (appraise → damp → decide)
+export set_motive!, motives, govern!, dominant_motive
+# MOSES — evolutionary program synthesis over Sprog
+export synthesize!, programs
 # Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 # Beliefs — truth values + staleness on the symbolic core (R10)

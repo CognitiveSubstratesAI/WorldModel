@@ -224,4 +224,32 @@ using Random: MersenneTwister
         @test any(occursin("chop", p) for (p, w) in pats)      # the recurring (chop …) structure
         @test !isempty(mined_patterns(reg5))                   # stored in Smine
     end
+
+    @testset "MetaMo motive governor over Smotive — appraise/damp/decide (§A.9)" begin
+        reg6 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg6)
+        set_motive!(reg6, "explore", 0.3)
+        set_motive!(reg6, "survive", 0.5)
+        @test dominant_motive(reg6)[1] == "survive"            # 0.5 > 0.3
+        # govern: a strong explore stimulus, HOMEOSTATICALLY DAMPED to ±max_drift, raises it past survive
+        dom = govern!(reg6, Dict("explore" => 0.9); max_drift=0.3)   # 0.3 + clamp(0.9,±0.3) = 0.6
+        @test dom[1] == "explore" && isapprox(dom[2], 0.6; atol=1e-9)
+        # safe projection: urgency stays in [0,1] under a huge stimulus
+        govern!(reg6, Dict("explore" => 5.0); max_drift=10.0)
+        @test motives(reg6)["explore"] <= 1.0
+    end
+
+    @testset "MOSES evolutionary program synthesis over Sprog (§A.12)" begin
+        reg7 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg7)
+        # fitness rewards matching the target sequence; MOSES evolves toward it
+        target = ["chop", "craft"]
+        fit(p) =
+            -abs(length(p) - length(target)) +
+            sum(i <= length(p) && p[i] == target[i] for i in 1:length(target))
+        best, f = synthesize!(reg7, fit, ["chop", "craft", "mine", "place"];
+            pop=24, gens=30, rng=MersenneTwister(7))
+        @test best == target && f == length(target)            # found the optimum
+        @test !isempty(programs(reg7))                         # stored in Sprog
+    end
 end
