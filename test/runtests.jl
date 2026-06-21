@@ -1,205 +1,137 @@
 using WorldModel
 using Test
+using Random: MersenneTwister
 
-# A MOCK backend — proves WorldModel runs STANDALONE against any AbstractBackend, with no substrate
-# package installed. `wm_query` returns a configurable support count (§7.3 support / match-count).
-struct MockBackend <: AbstractBackend
-    supports::Dict{String, Int}
-end
-MockBackend() = MockBackend(Dict{String, Int}())
-WorldModel.wm_eval(::MockBackend, program::AbstractString) = "evaluated: $program"
-WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, pattern, 0)
-# the mock also backs the Space factory — a Space handle is just (name, kind) for tests.
-WorldModel.wm_space(::MockBackend, name::Symbol, kind::WorldModel.SpaceKind) = (name, kind)
-# … and the braid operators (trivial implementations, so the braid is exercised end-to-end).
-WorldModel.observe!(::MockBackend, spaces) = :ev1
-WorldModel.ground!(::MockBackend, spaces, ev) = [:atom1]
-WorldModel.encode_hmh!(::MockBackend, spaces, atoms) = :hmh1
-WorldModel.densify(::MockBackend, item) = Float32[0.0, 1.0]
-WorldModel.unbind(::MockBackend, item) = [:cand1]
-WorldModel.lift(::MockBackend, spaces, atoms) = (Float32[1.0, 0.0], :gating)
-WorldModel.summarize(::MockBackend, items) = Float32[0.5]
-WorldModel.act!(::MockBackend, spaces, action) = action
-# the mock SubRep gate = the real simplex CDS itself: admit iff Δr + min_i Δn_i ≥ −ε.
-WorldModel.wm_admit(::MockBackend, dr, dn, eps) = (Float64(dr) + minimum(dn)) >= -eps
+@testset "WorldModel infra spine — real MORK/PathMap substrate" begin
+    store = mktempdir()                              # ephemeral store for the test
+    m = manifest(; store=store)
+    reg = SpaceRegistry(m)
 
-@testset "WorldModel (standalone scaffold)" begin
-    @test WorldModel.WORLDMODEL_VERSION == v"0.1.0"
-
-    @testset "pluggable backend — no substrate dependency" begin
-        b = MockBackend(Dict(raw"(edge $x $y)" => 3))
-        @test wm_eval(b, "(+ 1 2)") == "evaluated: (+ 1 2)"
-        @test wm_query(b, raw"(edge $x $y)") == 3        # support count
-        @test wm_query(b, raw"(missing $x)") == 0
-        loop = CognitiveLoop(; backend=b)
-        @test loop.backend === b
-        @test loop.tick == 0
+    @testset "dynamic schema seeding (14 Spaces, data-driven)" begin
+        seed_world_model!(reg)
+        @test length(list_spaces(reg)) == 14
+        @test space_kind(reg, :Sent) == SYMBOLIC
+        @test space_kind(reg, :Sdyn) == DENSE
+        @test space_kind(reg, :Shmh) == HMH
     end
 
-    @testset "14-Space substrate registry (PRIMUS-world-modeling_v2 §4.2)" begin
-        # The world model is a heterogeneous braid of 14 Spaces, each created on the backend via the
-        # typed wm_space factory. WorldModel owns the schema; the backend (mock here) backs the handles.
-        b = MockBackend()
-        spaces = init_spaces!(b)
-        @test length(spaces.handles) == 14                       # all 14 Spaces created
-        @test Set(keys(spaces.handles)) == Set(first.(WM_SPACES))
-        @test space_kind(spaces, :Sopt) == SYMBOLIC              # SubRep's space
-        @test space_kind(spaces, :Sdyn) == DENSE                 # FabricPC's space
-        @test space_kind(spaces, :Shmh) == HMH                   # HMH's space
-        @test space_kind(spaces, :Senv) == ENVIO
-        @test space(spaces, :Sopt) == (:Sopt, SYMBOLIC)          # the mock handle
-        loop = CognitiveLoop(; backend=b, spaces=spaces)
-        @test loop.spaces === spaces
+    @testset "scoped add / count — per-Space isolation (separate tries)" begin
+        add!(reg, :Sent, "(entity alice) (entity bob)")
+        add!(reg, :Srule, "(implies p q)")
+        @test count_atoms(reg, :Sent) == 2
+        @test count_atoms(reg, :Srule) == 1            # Srule unaffected by Sent
+        @test "(entity alice)" in atoms(reg, :Sent)
     end
 
-    @testset "braid operators — the inter-space edges (§4.3–4.6)" begin
-        # Exercise the braid: Senv→Sevid→(Sent/Smap/Srule)→Shmh→kernel→Sctx→actions, each edge an operator.
-        b = MockBackend()
-        spaces = init_spaces!(b)
-        ev = observe!(b, spaces)                      # Senv → Sevid (o_t)
-        atoms = ground!(b, spaces, ev)               # Γ: evidence → symbolic atoms
-        h = encode_hmh!(b, spaces, atoms)            # 𝓔_hmh: atoms → HMH record
-        @test atoms == [:atom1]
-        @test densify(b, h) == Float32[0.0, 1.0]     # 𝓓_hmh: HMH → dense
-        @test unbind(b, h) == [:cand1]               # 𝓤_hmh: HMH → candidate symbolic
-        c, g = lift(b, spaces, atoms)                # Λ: atoms → (Sctx vector, gating)
-        @test c == Float32[1.0, 0.0] && g == :gating
-        @test summarize(b, [h]) == Float32[0.5]      # kernel/MKME μ_R
-        @test act!(b, spaces, :move) == :move        # Sdyn → Senv (a_t)
+    @testset ".act persistence round-trip (survives a fresh registry)" begin
+        path = persist!(reg, :Sent)
+        @test isfile(path)
+        reg2 = SpaceRegistry(manifest(; store=store))   # cold: nothing in memory
+        create_space!(reg2, :Sent)                         # restores from the .act on disk
+        @test count_atoms(reg2, :Sent) == 2
+        @test "(entity bob)" in atoms(reg2, :Sent)
     end
 
-    @testset "Sopt — SubRep admission bound into the options Space (§A.10)" begin
-        # The session's SubRep gate is now a Space service: admission certifies options into Sopt, and
-        # selection retrieves them under the current motive weights (zero-shot under a motive shift).
-        b = MockBackend()
-        loop = CognitiveLoop(; backend=b, spaces=init_spaces!(b))
-        @test admit_option!(loop, :skillA, 0.5, [0.25, 0.25]) == true   # helps both motives → admit
-        @test admit_option!(loop, :skillB, 0.0, [0.3, -0.5]) == false   # badly hurts motive-2 → reject
-        @test length(loop.sopt) == 1                                     # only A certified into Sopt
-        @test admit_option!(loop, :skillC, 0.0, [0.3, -0.05]; eps=0.1) == true  # complementary, budgeted
-        ids = [o.id for o in select_options(loop, [1.0, 0.0])]           # under a motive-1 weighting
-        @test :skillA in ids && :skillC in ids
-        # shift the motive weights → re-select from the SAME certificates, no recertification
-        @test :skillA in [o.id for o in select_options(loop, [0.0, 1.0])]
+    @testset "runtime create / delete (no code change, no hardcoding)" begin
+        create_space!(reg, :Scustom)
+        add!(reg, :Scustom, "(foo 42)")
+        @test has_space(reg, :Scustom) && count_atoms(reg, :Scustom) == 1
+        @test delete_space!(reg, :Scustom)
+        @test !has_space(reg, :Scustom)
     end
 
-    @testset "cognitive cycle — two loops × three rates over the braid (§3.1, §3.4)" begin
-        b = MockBackend(Dict(raw"(edge $x $y)" => 3))
-        loop = CognitiveLoop(; backend=b, spaces=init_spaces!(b))
-        admit_option!(loop, :skillA, 0.5, [0.25, 0.25])          # populate Sopt
-        # fast path (ms): observe + act, tick advances, no full Atomspace query
-        t0 = loop.tick
-        @test fast_step!(loop; action=:move) == :move
-        @test loop.tick == t0 + 1
-        # mid path (10s–100s ms): ground (Γ) → lift (Λ) → select a certified option under motives w
-        m = mid_step!(loop, :ev1; w=[1.0, 0.0])
-        @test m.gating == :gating
-        @test :skillA in [o.id for o in m.options]
-        # full multi-rate cycle: fast×mid goal-directed steps + one slow ambient step, end-to-end
-        r = world_cycle!(loop; evidence=:ev1, w=[1.0, 0.0], action=:move,
-            candidates=[raw"(edge $x $y)"], fast=2, mid=2)
-        @test haskey(r, :mid) && haskey(r, :ambient)
-        @test raw"(edge $x $y)" in r.ambient.frequent        # the ambient loop mined the recurring pattern
+    @testset "dense/HMH Spaces error honestly (registered ≠ backed; no mock)" begin
+        @test_throws ErrorException add!(reg, :Sdyn, "(x)")
+        @test_throws ErrorException count_atoms(reg, :Shmh)
     end
 
-    @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin
-        loop = CognitiveLoop(; backend=MockBackend())
-        # boost two atoms, rent 0 → STI = normalized boost (edge 3/4, rare 1/4); focus = both (> 0)
-        focus = attention_step!(
-            loop; boost=Dict(raw"(edge $x $y)" => 3.0, raw"(rare $x)" => 1.0), rent=0.0
-        )
-        @test focus == sort([raw"(edge $x $y)", raw"(rare $x)"])
-        @test loop.attention[raw"(edge $x $y)"] ≈ 0.75
-        @test loop.attention[raw"(rare $x)"] ≈ 0.25
-        @test sum(values(loop.attention)) ≈ 1.0          # §5.5 conservation: STI sums to unity
-        @test loop.tick == 1
-        # focus_threshold drops the low-STI atom (rare 0.25)
-        @test attention_step!(loop; rent=0.0, focus_threshold=0.5) == [raw"(edge $x $y)"]
+    @testset "braid: Γ grounding + evidence anchoring + R2 re-perception (§4.3–4.4)" begin
+        # obs → evidence shard in Sevid (content-addressed)
+        cid = store_evidence!(reg, "frame_0042_block_at_L7"; modality="vision")
+        @test !isempty(fetch_evidence(reg, cid))                    # shard retrievable from Sevid
+        # Γ: ground an unknown block as an entity in Sent + a spatial hypothesis in Smap, both anchored
+        ground!(reg, "u1", "(entity u1 unknown-block)", cid)
+        ground!(reg, "u1", "(AtLocation u1 L7)", cid; into=:Smap)
+        @test "(entity u1 unknown-block)" in atoms(reg, :Sent)
+        # R2: trace the symbol back to its evidence, then re-fetch the raw shard
+        @test cid in evidence_of(reg, "u1")
+        @test cid in evidence_of(reg, "u1"; into=:Smap)
+        shard = fetch_evidence(reg, cid)
+        @test any(occursin("frame_0042_block_at_L7", s) for s in shard)
     end
 
-    @testset "ambient loop — minimal mining slice (§4 / §7.3 support)" begin
-        b = MockBackend(Dict(raw"(edge $x $y)" => 3, raw"(rare $x)" => 1))
-        loop = CognitiveLoop(; backend=b)
-        freq = ambient_step!(loop; candidates=[raw"(edge $x $y)", raw"(rare $x)"], minsup=2)
-        @test freq == [raw"(edge $x $y)"]                # support 3 ≥ 2 kept; rare (1) dropped
-        @test loop.tick == 1
-        @test ambient_step!(loop; candidates=String[]) == String[]   # no candidates → empty
-        @test loop.tick == 2
+    @testset "beliefs: truth values + staleness decay (R10; §4.7, §6.1.3)" begin
+        # competing low-confidence affordance hypotheses for an unknown block (§6.1.2), observed at t=0
+        assert_belief!(reg, "Conductor_u1", 0.6, 0.4, 0.0)
+        assert_belief!(reg, "Trigger_u1", 0.5, 0.3, 0.0)
+        @test ("Conductor_u1", 0.6, 0.4, 0.0) in beliefs(reg)
+        @test decayed_confidence(0.4, 0.0, 10.0; lambda=0.1) ≈ 0.4 * exp(-1.0)
+        # fresh just after assertion — nothing stale; much later — both decay below threshold (re-validate)
+        @test isempty(stale_beliefs(reg, 1.0; threshold=0.2, lambda=0.1))
+        st = stale_beliefs(reg, 25.0; threshold=0.2, lambda=0.1)
+        @test "Conductor_u1" in st && "Trigger_u1" in st
     end
 
-    @testset "concept blending — minimal pushout slice (§4 / category-theoretic)" begin
-        # (edge $x $y) & (edge $y $z) share $y (the generic space) → blend; the join body has support 2
-        b = MockBackend(Dict(raw"(edge $x $y) (edge $y $z)" => 2))
-        loop = CognitiveLoop(; backend=b)
-        @test blend_step!(loop, [raw"(edge $x $y)", raw"(edge $y $z)"]; minsup=2) ==
-            [raw"(, (edge $x $y) (edge $y $z))"]
-        @test loop.tick == 1
-        # (edge $x $y) & (color $z) share NO variable → no blend (empty generic space)
-        @test blend_step!(loop, [raw"(edge $x $y)", raw"(color $z)"]) == String[]
-    end
-
-    @testset "factor-PLN — belief tightening (§4 / §1b evidence→TV)" begin
-        b = MockBackend(Dict(raw"(edge $x $y)" => 9, raw"(rare $x)" => 1))
-        loop = CognitiveLoop(; backend=b)
-        beliefs = pln_step!(loop, [raw"(edge $x $y)", raw"(rare $x)"]; k=1)
-        @test beliefs[1] == (raw"(edge $x $y)", 9, 0.9)   # confidence 9/(9+1) rises with evidence
-        @test beliefs[2] == (raw"(rare $x)", 1, 0.5)       # 1/(1+1)
-        @test loop.tick == 1
-    end
-
-    @testset "run_ambient! — one full ambient cycle (§4)" begin
-        b = MockBackend(
+    @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
+        # two affordance trials encoded as role-filler episodes into Shmh (real FactorVSA hypervectors)
+        encode_hmh!(reg, :trial1,
             Dict(
-                raw"(edge $x $y)" => 3,
-                raw"(edge $y $z)" => 3,
-                raw"(edge $x $y) (edge $y $z)" => 2   # the 2-hop join body (blend support)
+                :item => (:block, :u1),
+                :func => (:role, :conductor),
+                :ctx => (:adj, :redstone)
+            );
+            pointers=["Sent:u1"])
+        encode_hmh!(reg, :trial2,
+            Dict(
+                :item => (:block, :u2), :func => (:role, :insulator), :ctx => (:adj, :stone)
+            ))
+        # structured recall: a query matching trial1's structure ranks trial1 first, strictly above trial2
+        hits = retrieve_hmh(reg,
+            Dict(
+                :item => (:block, :u1),
+                :func => (:role, :conductor),
+                :ctx => (:adj, :redstone)
+            ); topk=2)
+        @test hits[1][1] == :trial1
+        @test hits[1][2] > hits[2][2]
+        # 𝓓_hmh: dense hypervector of the right dimension; back-pointers preserved
+        @test length(densify_hmh(reg, :trial1)) == 1024
+        @test "Sent:u1" in record_pointers(hmh_index(reg, :Shmh), :trial1)
+        # count_atoms still rejects Shmh (it's HMH-backed, not a MORK trie)
+        @test_throws ErrorException count_atoms(reg, :Shmh)
+    end
+
+    @testset "dense/green braid: Λ lift + kernel μR + Sdyn FabricPC predictor (§4.5)" begin
+        # Λ: retrieve the top Shmh record for a conductor-like query, densify, store as a Sctx context vector
+        v = lift!(reg, :ctx1,
+            Dict(
+                :item => (:block, :u1),
+                :func => (:role, :conductor),
+                :ctx => (:adj, :redstone)
+            ))
+        @test length(v) == 1024
+        @test has_vec(dense_store(reg, :Sctx), :ctx1)
+        # a second context vector, then a kernel-mean μR summary in Skernel
+        lift!(
+            reg,
+            :ctx2,
+            Dict(
+                :item => (:block, :u2), :func => (:role, :insulator), :ctx => (:adj, :stone)
             )
         )
-        loop = CognitiveLoop(; backend=b)
-        r = run_ambient!(loop; candidates=[raw"(edge $x $y)", raw"(edge $y $z)"], minsup=2)
-        @test sort(r.focus) == sort([raw"(edge $x $y)", raw"(edge $y $z)"])      # ECAN: both attended
-        @test sort(r.frequent) == sort([raw"(edge $x $y)", raw"(edge $y $z)"])   # mining: both support 3
-        @test r.blends == [raw"(, (edge $x $y) (edge $y $z))"]                   # blend on shared $y
-        @test length(r.beliefs) == 2                                            # factor-PLN
-        @test loop.attention[raw"(edge $x $y)"] > 0    # feedback: believed atom keeps STI next cycle
-    end
-
-    @testset "goal loop — affordance-based planning (§4 goal-directed)" begin
-        loop = CognitiveLoop(; backend=MockBackend())
-        affordances = [raw"(, (chop $o) (yields $o $r))", raw"(, (mine $o) (yields $o $r))"]
-        beliefs = Dict(
-            raw"(, (chop $o) (yields $o $r))" => 0.75,
-            raw"(, (mine $o) (yields $o $r))" => 0.6
-        )
-        # goal: achieve a "yields" outcome → propose the actions, certified by belief, best first
-        opts = goal_step!(
-            loop, raw"(yields $o wood)"; affordances=affordances, beliefs=beliefs
-        )
-        @test opts == [(raw"(chop $o)", 0.75), (raw"(mine $o)", 0.6)]   # both yield; chop more certified
-        @test loop.tick == 1
-        @test goal_step!(loop, raw"(flies $o)"; affordances=affordances) ==
-            Tuple{String, Float64}[]  # no match
-    end
-
-    @testset "goal loop — multi-hop backward chaining (plan_goal!, §4 explainable chains)" begin
-        loop = CognitiveLoop(; backend=MockBackend())
-        R1 = raw"(, (yields $o wood) (craft $o plank) (yields $o plank))"   # plank ⟸ wood + craft
-        R2 = raw"(, (chop $o) (yields $o wood))"                            # wood  ⟸ chop
-        rules = [R1, R2]
-        beliefs = Dict(R1 => 0.9, R2 => 0.8)
-        plan = plan_goal!(loop, raw"(yields $o plank)"; affordances=rules, beliefs=beliefs)
-        @test plan.steps == [raw"(chop $o)", raw"(craft $o plank)"]   # chop (→wood) then craft (→plank)
-        @test plan.confidence ≈ 0.72                                  # 0.9 × 0.8 along the chain
-        @test loop.tick == 1
-        @test plan_goal!(loop, raw"(flies $o)"; affordances=rules) === nothing   # unreachable → nothing
-        # a goal already true in the substrate → no actions needed (base case)
-        loop2 = CognitiveLoop(; backend=MockBackend(Dict(raw"(yields $o wood)" => 5)))
-        p2 = plan_goal!(loop2, raw"(yields $o wood)"; affordances=rules)
-        @test p2.steps == String[]
-        @test p2.confidence == 1.0
-    end
-
-    @testset "ambient steps require a backend" begin
-        @test_throws ErrorException ambient_step!(CognitiveLoop())
+        s = kernel_summary!(reg, [:ctx1, :ctx2], :mu)
+        @test length(s) == 1024 && has_vec(dense_store(reg, :Skernel), :mu)
+        # MORKTensorNetworks kernel service directly: μR weights are a distribution; MMD(self)≈0
+        ds = dense_store(reg, :Sctx)
+        mu, w = kernel_mu([get_vec(ds, :ctx1), get_vec(ds, :ctx2)])
+        @test length(mu) == 1024 && isapprox(sum(w), 1.0; atol=1e-6)
+        @test isapprox(mmd([get_vec(ds, :ctx1)], [get_vec(ds, :ctx1)]), 0.0; atol=1e-6)
+        # Sdyn: bind a real FabricPC predictor and condition it on the context vector (Sctx → Sdyn)
+        attach_dynamics!(reg, 1024, 32, 8; rng=MersenneTwister(1))
+        @test has_predictor(dense_store(reg, :Sdyn))
+        y = predict_dynamics(reg, v; rng=MersenneTwister(2))
+        @test length(y) == 8 && all(isfinite, y)
+        # DENSE Spaces still reject MORK atom ops
+        @test_throws ErrorException add!(reg, :Sdyn, "(x)")
     end
 end
