@@ -12,7 +12,9 @@
 #   Goal-directed loop:  MetaMo → PLN → MOSES / GEO-EVO → PC (ActPC) → SubRep
 #   Ambient loop:        ECAN → pattern mining (WILLIAM) → concept blending → factor-graph PLN
 #   Shared controls:     geodesic control · quantale-weakness (Occam prior)
-#   Memory substrate:    13 Spaces (§7 / vibe-eng Appendix A) — Senv/Sevid/Sent/Smap/Srule/Shmh/…
+#   Memory substrate:    14 Spaces (PRIMUS-world-modeling_v2 §4.2) — Senv/Sevid/Sent/Smap/Srule/Shmh/…
+#                        a HETEROGENEOUS braid (each Space on its own substrate), wired by the bridging
+#                        operators Γ/Λ/𝓔/𝓓/𝓤 + observe/act/summarize. Algorithms = per-Space processes.
 #
 # STATUS: the ambient loop is complete + self-feeding; the goal loop has its first slices (one-hop
 # goal_step! + multi-hop plan_goal! backward chaining). Wired SCENARIO-DRIVEN (Minecraft affordance
@@ -128,6 +130,46 @@ Base.@kwdef mutable struct CognitiveLoop{B}
     tick::Int = 0
     attention::Dict{String, Float64} = Dict{String, Float64}()
 end
+
+# ── Bridging operators — the EDGES of the inter-space braid (§4.3–4.6, the diagram) ──────────────────
+#
+# The Spaces are interlocked by a small set of operators (the diagram's arrows). Each is a generic
+# function implemented by a backend adapter / bound service; WorldModel defines the CONTRACT + the braid
+# that wires the Spaces. Real implementations need the substrate (perception for Γ, HMH for 𝓔/𝓓/𝓤); a
+# mock backs them for tests. The braid: Senv→Sevid→(Sent/Smap/Srule)→Shmh→kernel→Sctx→Sdyn→actions.
+
+"`observe!(backend, spaces)` — read the latest observation `o_t` from Senv and store it as immutable
+evidence `(id,modality,t,payload,CID)` in Sevid (R2). Returns the evidence id(s)."
+function observe! end
+
+"`act!(backend, spaces, action)` — issue action `a_t` to Senv (from Sdyn fast path / planner)."
+function act! end
+
+"Γ grounding (§4.4): `ground!(backend, spaces, evidence)` — `(Sevid×Sdyn×Sctx)→P(Atom)`: propose candidate
+atoms (TV + evidence pointers) → compete/merge identity hypotheses → audit provenance; consolidate into
+Sent/Smap/Srule, evidence-anchored. Returns the grounded atoms."
+function ground! end
+
+"𝓔_hmh (§4.4): `encode_hmh!(backend, spaces, atoms)` — `(Atom*×Sevid)→{±1}^D`: compile an evidence-anchored
+symbolic subgraph (roles/fillers/constraints/time) into an HMH record in Shmh (key + pointers back)."
+function encode_hmh! end
+
+"𝓓_hmh (§4.5, App B): `densify(backend, item)` — map an HMH item to a dense DUAL-CHANNEL vector
+`x = [x_A ‖ x_G]` (algebra-preserving ‖ geometry-enhancing) for Sctx."
+function densify end
+
+"𝓤_hmh: `unbind(backend, item)` — approximate unbinding of an HMH item to propose candidate symbolic
+structure when needed (HMH → Sent/Srule hypotheses)."
+function unbind end
+
+"Λ lifting (§4.5): `lift(backend, spaces, atoms)` — `(Atom*×Shmh×Srule×Smotive)→(Sctx×G)`: map the active
+symbolic context (+ HMH retrieval + motive state) into a context vector `c∈Sctx` and a gating pattern
+`g∈G` that configures which Sdyn neural modules are active/learned."
+function lift end
+
+"Kernel/MKME (§4.5, App C): `summarize(backend, items)` — set→vector: kernel-mean / MKME summary `μ_R` of
+a set of (HMH/symbolic) items, with relevance weights for gating + re-ranking (the cross-cutting layer)."
+function summarize end
 
 # split a conjunction "(, P1 P2 …)" into its clause strings (ASCII s-expressions)
 function _conj_clauses(s::AbstractString)
@@ -445,5 +487,6 @@ export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!, plan_goal!
 export attention_step!, ambient_step!, blend_step!, pln_step!, run_ambient!
 export SpaceKind, SYMBOLIC, DENSE, HMH, EVIDENCE, ENVIO, WM_SPACES
 export wm_space, Spaces, init_spaces!, space, space_kind
+export observe!, act!, ground!, encode_hmh!, densify, unbind, lift, summarize
 
 end # module WorldModel

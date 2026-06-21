@@ -11,6 +11,15 @@ WorldModel.wm_eval(::MockBackend, program::AbstractString) = "evaluated: $progra
 WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, pattern, 0)
 # the mock also backs the Space factory — a Space handle is just (name, kind) for tests.
 WorldModel.wm_space(::MockBackend, name::Symbol, kind::WorldModel.SpaceKind) = (name, kind)
+# … and the braid operators (trivial implementations, so the braid is exercised end-to-end).
+WorldModel.observe!(::MockBackend, spaces) = :ev1
+WorldModel.ground!(::MockBackend, spaces, ev) = [:atom1]
+WorldModel.encode_hmh!(::MockBackend, spaces, atoms) = :hmh1
+WorldModel.densify(::MockBackend, item) = Float32[0.0, 1.0]
+WorldModel.unbind(::MockBackend, item) = [:cand1]
+WorldModel.lift(::MockBackend, spaces, atoms) = (Float32[1.0, 0.0], :gating)
+WorldModel.summarize(::MockBackend, items) = Float32[0.5]
+WorldModel.act!(::MockBackend, spaces, action) = action
 
 @testset "WorldModel (standalone scaffold)" begin
     @test WorldModel.WORLDMODEL_VERSION == v"0.1.0"
@@ -39,6 +48,22 @@ WorldModel.wm_space(::MockBackend, name::Symbol, kind::WorldModel.SpaceKind) = (
         @test space(spaces, :Sopt) == (:Sopt, SYMBOLIC)          # the mock handle
         loop = CognitiveLoop(; backend=b, spaces=spaces)
         @test loop.spaces === spaces
+    end
+
+    @testset "braid operators — the inter-space edges (§4.3–4.6)" begin
+        # Exercise the braid: Senv→Sevid→(Sent/Smap/Srule)→Shmh→kernel→Sctx→actions, each edge an operator.
+        b = MockBackend()
+        spaces = init_spaces!(b)
+        ev = observe!(b, spaces)                      # Senv → Sevid (o_t)
+        atoms = ground!(b, spaces, ev)               # Γ: evidence → symbolic atoms
+        h = encode_hmh!(b, spaces, atoms)            # 𝓔_hmh: atoms → HMH record
+        @test atoms == [:atom1]
+        @test densify(b, h) == Float32[0.0, 1.0]     # 𝓓_hmh: HMH → dense
+        @test unbind(b, h) == [:cand1]               # 𝓤_hmh: HMH → candidate symbolic
+        c, g = lift(b, spaces, atoms)                # Λ: atoms → (Sctx vector, gating)
+        @test c == Float32[1.0, 0.0] && g == :gating
+        @test summarize(b, [h]) == Float32[0.5]      # kernel/MKME μ_R
+        @test act!(b, spaces, :move) == :move        # Sdyn → Senv (a_t)
     end
 
     @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin
