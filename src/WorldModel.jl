@@ -30,6 +30,8 @@ include("Schema.jl")
 include("Braid.jl")
 include("Beliefs.jl")
 include("PLN.jl")
+include("SubRep.jl")
+include("Mining.jl")
 include("Loops.jl")
 
 using .Manifest
@@ -42,6 +44,8 @@ using .Schema
 using .Braid
 using .Beliefs
 using .PLN
+using .SubRep
+using .Mining
 using .Loops
 
 # ── Public surface ────────────────────────────────────────────────────────────────────────────────
@@ -67,6 +71,10 @@ export DenseStore, dense_store, get_vec, has_vec, vec_keys, has_predictor
 export kernel_mu, gram, mmd
 # PLN — uncertain inference over Srule (the goal loop's reasoning process)
 export STV, truth_deduction, node_stv, impl_stv, assert_implication!, deduce, select_action
+# SubRep — option admission over Sopt (CDS gate + certificates + zero-shot reuse)
+export cds_margin, cds_admit, admit_option!, admitted_options, reuse_options
+# Mining — WILLIAM pattern mining over a Space into Smine
+export mine!, mined_patterns
 # Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 # Beliefs — truth values + staleness on the symbolic core (R10)

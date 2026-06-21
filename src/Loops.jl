@@ -17,6 +17,7 @@ using ..Beliefs: stale_beliefs
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
 using ..PLN: select_action
+using ..Mining: mine!
 
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 
@@ -92,17 +93,19 @@ end
     slow_step!(loop; t, threshold=0.3, lambda=0.1, template_key=:template) -> NamedTuple
 
 SLOW path (§3.4 / §6.1.4): the AMBIENT cycle — re-validate stale beliefs (R10: confidence decayed below
-`threshold` at time `t`) and consolidate Shmh episodes into a template (schema formation). Returns
-`(; stale, consolidated)`. Pattern mining (WILLIAM → Smine) and program synthesis (MOSES → Sprog) plug in
-here. Advances the tick.
+`threshold` at time `t`), consolidate Shmh episodes into a template (schema formation), and MINE recurring
+patterns (WILLIAM over `mine_from` → Smine). Returns `(; stale, consolidated, mined)`. Program synthesis
+(MOSES → Sprog) and option admission (SubRep → Sopt) plug in here when those processes have a source.
+Advances the tick.
 """
 function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::Real=0.1,
-    template_key::Symbol=:template)
+    template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5)
     reg = loop.reg
     stale = stale_beliefs(reg, t; threshold=threshold, lambda=lambda)
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
+    mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     loop.tick += 1
-    return (; stale=stale, consolidated=consolidated)
+    return (; stale=stale, consolidated=consolidated, mined=mined)
 end
 
 """

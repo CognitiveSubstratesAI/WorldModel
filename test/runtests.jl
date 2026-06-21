@@ -199,4 +199,29 @@ using Random: MersenneTwister
         rr = mid_step!(loop3, obs3; goal="wood")
         @test rr.action !== nothing && rr.action[1] == "chop"
     end
+
+    @testset "SubRep option admission over Sopt — CDS gate + certificate + reuse (§A.10)" begin
+        reg4 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg4)
+        @test cds_margin(0.5, [0.25, 0.25]) ≈ 0.75
+        @test admit_option!(reg4, "skillA", 0.5, [0.25, 0.25]) == true   # helps both motives
+        @test admit_option!(reg4, "skillB", 0.0, [0.3, -0.5]) == false   # margin -0.5 < 0 → reject
+        @test "skillA" in admitted_options(reg4) && !("skillB" in admitted_options(reg4))
+        @test admit_option!(reg4, "skillC", 0.0, [0.3, -0.05]; eps=-0.1) == true  # budgeted
+        # zero-shot reuse: re-score under a motive-1 weighting straight from the certificates
+        reused = reuse_options(reg4, [1.0, 0.0])
+        @test reused[1][1] == "skillA"      # 0.5+0.25 = 0.75 beats skillC's 0.0+0.3
+    end
+
+    @testset "WILLIAM pattern mining over a Space into Smine (§A.13)" begin
+        reg5 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg5)
+        add!(reg5, :Sent,
+            "(chop tree wood) (chop tree wood) (chop rock stone) (mine rock stone) (mine rock stone)"
+        )
+        pats = mine!(reg5; from=:Sent, k=5)
+        @test !isempty(pats)                                   # WILLIAM found frequent patterns
+        @test any(occursin("chop", p) for (p, w) in pats)      # the recurring (chop …) structure
+        @test !isempty(mined_patterns(reg5))                   # stored in Smine
+    end
 end
