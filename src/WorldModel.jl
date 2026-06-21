@@ -45,20 +45,86 @@ Whitepaper 2025 §7.3 `support`/`match-count`, counted without materializing the
 """
 function wm_query end
 
+# ── The 14 world-model Spaces — the substrate skeleton (PRIMUS-world-modeling_v2 §4.2) ───────────────
+#
+# The world model is a BRAIDED object, not a monolith (§3.3): a HETEROGENEOUS set of Spaces, each a
+# memory+computation regime with distinct invariants / time-scale / query-primitive / failure-mode
+# (Appendix A §A.1). They interlock via shared IDs + content addressing + shared truth-value/certificate
+# annotations + the bridging operators (Γ grounding, Λ lifting, 𝓔_hmh, 𝓓_hmh, 𝓤_hmh). Each Space's
+# PROCESSES are the algorithm services (PLN→Srule, SubRep→Sopt, MOSES→Sprog, WILLIAM→Smine, …) bound later.
+
+"""Representational species / regime of a Space (§3.2, §4.2): symbolic-primary, dense-primary,
+HMH-primary, plus the evidence store and the environment I/O boundary."""
+@enum SpaceKind SYMBOLIC DENSE HMH EVIDENCE ENVIO
+
+"""The canonical 14 world-model Spaces (PRIMUS-world-modeling_v2 §4.2): `(name, kind, role)`."""
+const WM_SPACES = (
+    (:Senv, ENVIO, "environment interface — observations o_t / actions a_t"),
+    (
+        :Sevid,
+        EVIDENCE,
+        "evidence store — immutable shards (id,modality,t,payload,CID) [R2]"
+    ),
+    (:Sent, SYMBOLIC, "entities + relations — persistent identity hypotheses [R1,R4]"),
+    (:Smap, SYMBOLIC, "spatiotemporal map — layout, time stamps, staleness decay [R6,R10]"),
+    (:Srule, SYMBOLIC, "rules + uncertain inference — PLN facts/rules/norms [R4,R7,R10]"),
+    (:Shmh, HMH, "HMH associative index — episodes/skills/affordances [R3,R5,R6,R11]"),
+    (:Sctx, DENSE, "dense context latents — context vectors + 𝓓_hmh outputs [R3]"),
+    (:Sdyn, DENSE, "predictive dynamics + control — fast path, PC nets [R7,R11]"),
+    (:Smotive, SYMBOLIC, "motives + certificates — MetaMo objectives (governs both loops)"),
+    (:Sopt, SYMBOLIC, "options/subgoals — SubRep-admitted skills + certificates [R5]"),
+    (:Sxfer, SYMBOLIC, "transfer/composition — TransWeave artifacts [R9]"),
+    (:Sprog, SYMBOLIC, "program space — MOSES/GEO-EVO evolved macros [R5]"),
+    (:Smine, SYMBOLIC, "pattern mining/compression — WILLIAM service [R5,R11]"),
+    (:Skernel, DENSE, "kernel/MKME — set→vector summaries (cross-cutting service)")
+)
+
+"""
+    wm_space(backend, name::Symbol, kind::SpaceKind)
+
+Create (or fetch) a handle to a Space of the given `kind` on `backend`. A backend adapter maps each kind
+to its substrate: SYMBOLIC/EVIDENCE → a prefix-scoped MORK `CoreSpace` (`new_core_space(shared, prefix)`);
+DENSE → a FabricPC dense store; HMH → an HMH index; IO → a scenario channel. A mock backs all kinds for
+tests. WorldModel never hard-deps any substrate — it only addresses Spaces through this seam.
+"""
+function wm_space end
+
+"""The live registry of the 14 Spaces: `name → backend handle` (+ each Space's [`SpaceKind`](@ref))."""
+struct Spaces
+    handles::Dict{Symbol, Any}
+    kinds::Dict{Symbol, SpaceKind}
+end
+
+"Create all 14 world-model Spaces on `backend` (each via [`wm_space`](@ref)); returns the [`Spaces`](@ref) registry."
+function init_spaces!(backend)
+    handles = Dict{Symbol, Any}()
+    kinds = Dict{Symbol, SpaceKind}()
+    for (name, kind, _role) in WM_SPACES
+        handles[name] = wm_space(backend, name, kind)
+        kinds[name] = kind
+    end
+    return Spaces(handles, kinds)
+end
+
+"Handle to Space `name` in the registry."
+space(s::Spaces, name::Symbol) = s.handles[name]
+"The [`SpaceKind`](@ref) of Space `name`."
+space_kind(s::Spaces, name::Symbol) = s.kinds[name]
+
 # ── The two-loop cognitive cycle ─────────────────────────────────────────────────────────────────────
 
 """
-    CognitiveLoop(; backend=nothing)
+    CognitiveLoop(; backend=nothing, spaces=nothing)
 
-The PRIMUS two-loop cognitive cycle (Whitepaper §4) over a pluggable `backend::AbstractBackend`. Holds the
-live `attention` state (ECAN STI per atom) and a `tick` counter. Advance it with [`attention_step!`](@ref)
+The PRIMUS two-loop cognitive cycle (Whitepaper §4) over a pluggable `backend::AbstractBackend` and the
+14-Space substrate registry `spaces::Spaces` (build it with [`init_spaces!`](@ref)). Holds the live
+`attention` state (ECAN STI per atom) and a `tick` counter. Advance it with [`attention_step!`](@ref)
 → [`ambient_step!`](@ref) → [`blend_step!`](@ref) → [`pln_step!`](@ref) (the ambient loop), and
 [`goal_step!`](@ref) / [`plan_goal!`](@ref) (the goal-directed loop).
-
-Substrate Spaces and further component handles are added scenario-driven (`docs/decisions.md`).
 """
 Base.@kwdef mutable struct CognitiveLoop{B}
     backend::B = nothing
+    spaces::Union{Nothing, Spaces} = nothing
     tick::Int = 0
     attention::Dict{String, Float64} = Dict{String, Float64}()
 end
@@ -377,5 +443,7 @@ end
 
 export AbstractBackend, wm_eval, wm_query, CognitiveLoop, goal_step!, plan_goal!
 export attention_step!, ambient_step!, blend_step!, pln_step!, run_ambient!
+export SpaceKind, SYMBOLIC, DENSE, HMH, EVIDENCE, ENVIO, WM_SPACES
+export wm_space, Spaces, init_spaces!, space, space_kind
 
 end # module WorldModel

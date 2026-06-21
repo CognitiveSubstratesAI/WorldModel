@@ -9,6 +9,8 @@ end
 MockBackend() = MockBackend(Dict{String, Int}())
 WorldModel.wm_eval(::MockBackend, program::AbstractString) = "evaluated: $program"
 WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, pattern, 0)
+# the mock also backs the Space factory — a Space handle is just (name, kind) for tests.
+WorldModel.wm_space(::MockBackend, name::Symbol, kind::WorldModel.SpaceKind) = (name, kind)
 
 @testset "WorldModel (standalone scaffold)" begin
     @test WorldModel.WORLDMODEL_VERSION == v"0.1.0"
@@ -21,6 +23,22 @@ WorldModel.wm_query(b::MockBackend, pattern::AbstractString) = get(b.supports, p
         loop = CognitiveLoop(; backend=b)
         @test loop.backend === b
         @test loop.tick == 0
+    end
+
+    @testset "14-Space substrate registry (PRIMUS-world-modeling_v2 §4.2)" begin
+        # The world model is a heterogeneous braid of 14 Spaces, each created on the backend via the
+        # typed wm_space factory. WorldModel owns the schema; the backend (mock here) backs the handles.
+        b = MockBackend()
+        spaces = init_spaces!(b)
+        @test length(spaces.handles) == 14                       # all 14 Spaces created
+        @test Set(keys(spaces.handles)) == Set(first.(WM_SPACES))
+        @test space_kind(spaces, :Sopt) == SYMBOLIC              # SubRep's space
+        @test space_kind(spaces, :Sdyn) == DENSE                 # FabricPC's space
+        @test space_kind(spaces, :Shmh) == HMH                   # HMH's space
+        @test space_kind(spaces, :Senv) == ENVIO
+        @test space(spaces, :Sopt) == (:Sopt, SYMBOLIC)          # the mock handle
+        loop = CognitiveLoop(; backend=b, spaces=spaces)
+        @test loop.spaces === spaces
     end
 
     @testset "ECAN — attention diffusion (§4 / §5.5 STI conservation)" begin
