@@ -301,3 +301,6 @@ using Random: MersenneTwister
         @test admit_transfer!(reg9, "badmap", "wetGrass_src"; eps=0.1) == false
     end
 end
+
+# WorldModel→lib remediation (PLN): WorldModel runs canonical Core/lib/pln, bisimulation-gated.
+include("test_pln_delegation.jl")

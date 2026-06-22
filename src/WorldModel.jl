@@ -29,6 +29,7 @@ include("Schema.jl")
 include("Braid.jl")
 include("Beliefs.jl")
 include("PLN.jl")
+include("PLNCore.jl")
 include("SubRep.jl")
 include("Mining.jl")
 include("MetaMo.jl")
@@ -46,6 +47,7 @@ using .Schema
 using .Braid
 using .Beliefs
 using .PLN
+using .PLNCore
 using .SubRep
 using .Mining
 using .MetaMo
