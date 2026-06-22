@@ -17,6 +17,7 @@ using ..Beliefs: stale_beliefs
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
+using ..MetaMoCore: govern              # canonical MetaMo goal governance (delegates to lib/metamo)
 using ..Mining: mine!
 using ..SubRepCore: admit_proposed!     # ambient SubRep option certification (delegates to lib/subrep)
 using ..MOSES: geo_synthesize!, geo_synthesize_geometric!   # Julia GA | canonical geometric geo_step! engine
@@ -69,12 +70,14 @@ end
 
 MID path (§3.4 / §6.1.4): the GOAL-directed cycle — store evidence (Sevid), ground the entity (Γ → Sent,
 evidence-anchored), encode the trial as an HMH episode (𝓔ₕₘₕ → Shmh), and lift the densified retrieval into
-a context vector (Λ → Sctx) that becomes the loop's current context for the fast reflex. When a `goal` is
-given, PLN backward-chains over Srule to SELECT an action (`(action, stv)` best-first, or `nothing`).
-Returns `(; cid, context, context_vector, action)`.
+a context vector (Λ → Sctx) that becomes the loop's current context for the fast reflex. The goal is
+MOTIVE-GOVERNED: when a `governor` `(; goals, mods, stimulus, candidates)` is supplied and no explicit
+`goal`, canonical MetaMo (`metamoGovern`: Ψ appraise → 𝔻 decide → safe-project) SELECTS the goal from the
+OpenPsi motive state (§A.9 / infrastructure: S_motive → MetaMo → action selection). PLN then backward-chains
+over Srule to select an action for it. Returns `(; cid, context, context_vector, action, goal, governance)`.
 """
 function mid_step!(
-    loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx, goal=nothing
+    loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx, goal=nothing, governor=nothing
 )
     reg = loop.reg
     cid = store_evidence!(reg, obs.payload; modality=obs.modality)
@@ -83,12 +86,17 @@ function mid_step!(
     v = lift!(reg, ctx_key, obs.slots)
     loop.context = ctx_key
     loop.tick += 1
-    acts = goal === nothing ? [] : select_action(reg, goal)   # PLN action-selection over Srule
+    governance = governor === nothing ? nothing :              # MetaMo governs WHICH goal to pursue
+        govern(governor.goals, governor.mods, governor.stimulus, governor.candidates)
+    goal === nothing && governance !== nothing && (goal = governance.chosen)
+    acts = goal === nothing ? [] : select_action(reg, goal)    # PLN action-selection over Srule
     return (;
         cid=cid,
         context=ctx_key,
         context_vector=v,
-        action=(isempty(acts) ? nothing : first(acts))
+        action=(isempty(acts) ? nothing : first(acts)),
+        goal=goal,
+        governance=governance
     )
 end
 

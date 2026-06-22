@@ -41,3 +41,33 @@ const MetaMoCore = WorldModel.MetaMoCore
     @test !isdefined(MetaMo, :boundary_pressure)
     @info "MetaMo delegation: projection floors gInd 0.1→0.3 (clamp can't); OpenPsi Ψ → $(length(appr)) modulators"
 end
+
+@testset "MetaMo motive-governed goal loop (mid_step!) — canonical metamoGovern selects the goal" begin
+    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    seed_world_model!(reg)
+    assert_implication!(reg, "chop", "wood", 0.9, 0.8, 0.0)   # PLN knowledge: chop ⇒ wood
+
+    goals = [0.25, 0.75, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    mods = fill(0.5, 6)
+    stim = [0.2, 0.8, 0.1, 0.2]
+    candidates = [   # `wood` = positive goal-correlations + zero risk; `lava` = negative + high risk
+        (id = "wood", corrs = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], risk = 0.0,
+            dg = [0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]),
+        (id = "lava", corrs = [0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0], risk = 1.0,
+            dg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ]
+
+    # canonical metamoGovern (Ψ→𝔻→damp→project) selects the goal from the OpenPsi state
+    g = MetaMoCore.govern(goals, mods, stim, candidates)
+    @test g !== nothing && g.chosen == "wood"               # picks the positive-correlation, zero-risk goal
+    @test length(g.goals) == 8 && length(g.mods) == 6       # safe next motive state returned
+
+    # the GOAL LOOP is now motive-governed: mid_step! with a governor (no explicit goal) selects + acts
+    loop = CognitiveLoop(reg)
+    obs = Observation("f", "vision", "u", "(entity u tree)", :e, Dict(:i => (:tree, :u)))
+    rr = mid_step!(loop, obs; governor = (goals = goals, mods = mods, stimulus = stim, candidates = candidates))
+    @test rr.goal == "wood"                                 # MetaMo chose the goal (none was passed in)
+    @test rr.action !== nothing && rr.action[1] == "chop"   # PLN then selected the action for it
+    @test rr.governance.chosen == "wood"
+    @info "MetaMo-governed goal loop: metamoGovern chose `wood` over `lava`; PLN acted via `chop`"
+end

@@ -66,4 +66,23 @@ Full OpenPsi appraisal Ψ (eq #4) via lib/metamo `openPsiAppraise`: a 4-channel 
 appraise(goals, mods, stimulus) =
     _parse_vec(_eval1("(motivationModulators (openPsiAppraise $(_state(goals, mods)) (stimulus $(_vec(stimulus)))))"))
 
+"""
+    govern(goals, mods, stimulus, candidates) -> (; chosen, goals, mods) | nothing
+
+The full canonical MetaMo governance step (`metamoGovern`, dynamics.metta): Ψ appraise the OpenPsi state
+under `stimulus` → 𝔻 MAGUS-decide the best action among `candidates` → homeostatic-damp → project to the
+safe region R. Each candidate is a NamedTuple `(; id, corrs, risk, dg)` (8-vector goal correlations, scalar
+risk, 8-vector ΔG). Returns the chosen action `id` (the goal to pursue) and the safe next motive state.
+This is the goal loop's motive governor (§A.9 / infrastructure: S_motive → MetaMo → action selection).
+"""
+function govern(goals, mods, stimulus, candidates)
+    cand = join(["(action $(c.id) $(_vec(c.corrs)) $(c.risk) $(_vec(c.dg)))" for c in candidates], " ")
+    gov = "(metamoGovern $(_state(goals, mods)) (stimulus $(_vec(stimulus))) ($cand))"
+    chosen = _eval1("(actionId (transitionAction $gov))")
+    chosen === nothing && return nothing
+    (chosen = String(chosen),
+        goals = _parse_vec(_eval1("(motivationGoals (transitionState $gov))")),
+        mods = _parse_vec(_eval1("(motivationModulators (transitionState $gov))")))
+end
+
 end # module MetaMoCore
