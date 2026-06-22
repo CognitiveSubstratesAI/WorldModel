@@ -124,7 +124,7 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
         (get(synthesis, :engine, :julia) === :geometric ?
             geo_synthesize_geometric!(reg, synthesis.fitness, synthesis.primitives;
                 subgoals=get(synthesis, :subgoals, Any[]), goal=get(synthesis, :goal, :G),
-                rng=get(synthesis, :rng, default_rng())) :
+                recombine=get(synthesis, :recombine, false), rng=get(synthesis, :rng, default_rng())) :
             geo_synthesize!(reg, synthesis.fitness, synthesis.weakness, synthesis.primitives;
                 gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
                 subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))

@@ -71,3 +71,22 @@ end
     @test !isempty(programs(reg))           # program stored in the REAL Sprog via geo_step!
     @info "GEO-EVO geometric (geo_step!) live on slow_step!: align=$(round(align; digits=3)), best=$best"
 end
+
+@testset "GEO-EVO §7 recombination — multi-op program covers the FULL subgoal (slow_step!)" begin
+    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    seed_world_model!(reg)
+    prims = ["a", "b", "c", "d"]
+    fitness(p) = length(intersect(Set(p), Set(["c", "d"]))) / 2.0   # coverage of the subgoal {c,d}
+    loop = CognitiveLoop(reg)
+
+    # engine=:geometric + recombine=true ⇒ geo_evolve_blocks! assembles building blocks into a full coverer
+    sR = slow_step!(loop; t = 1.0,
+        synthesis = (fitness = fitness, weakness = (p) -> 0.0, primitives = prims,
+            engine = :geometric, recombine = true, subgoals = [["c", "d"]], goal = :G,
+            rng = MersenneTwister(11)))
+    best, cov = sR.synthesized
+    @test cov ≈ 1.0                          # the FULL motif {c,d} is covered (§7 blocks recombined)
+    @test Set(["c", "d"]) ⊆ Set(best)        # the program is MULTI-OP, covering BOTH subgoal ops
+    @test length(best) >= 2                  # multi-op (vs the single-op the plain geo_step! path extracted)
+    @info "GEO-EVO §7 recombine: multi-op program $best covers the full {c,d} subgoal (cov=$cov)"
+end

@@ -14,7 +14,7 @@ module MOSES
 using ..Registry: SpaceRegistry, add!, query_head
 using Random: AbstractRNG, default_rng
 import MORK
-using MorkSupercompiler: geo_cover, geo_step!, geo_params, Deme   # the REAL geometric GEO-EVO engine
+using MorkSupercompiler: geo_cover, geo_step!, geo_params, Deme, geo_evolve_blocks!   # geometric GEO-EVO + §7 recombine
 
 export synthesize!, geo_synthesize!, geo_synthesize_geometric!, programs
 
@@ -122,7 +122,22 @@ converge onto a subgoal). With no `subgoals`, `geo_step!` runs unsteered (plain 
 """
 function geo_synthesize_geometric!(reg::SpaceRegistry, fitness,
     primitives::AbstractVector{<:AbstractString}; subgoals::AbstractVector=Any[], goal::Symbol=:G,
-    gens::Int=5, n_inject::Int=12, into::Symbol=:Sprog, rng::AbstractRNG=default_rng())
+    gens::Int=5, n_inject::Int=12, recombine::Bool=false, into::Symbol=:Sprog,
+    rng::AbstractRNG=default_rng())
+    # §7 recombination path: assemble building blocks (op-sets) into a MULTI-OP program covering the
+    # full subgoal motif via geo_evolve_blocks! (vs geo_step!'s single-op deme nodes). Returns (best, coverage).
+    if recombine && !isempty(subgoals)
+        motif = Set(Symbol(op) for sg in subgoals for op in sg)
+        rfit(set::Set{Symbol}) = float(fitness(String[String(op) for op in set]))
+        pop = Set{Symbol}[Set([Symbol(p)]) for p in primitives]   # scattered singleton building blocks
+        for _ in 1:gens
+            pop = geo_evolve_blocks!(pop, motif, rfit; rng=rng)
+        end
+        bestset = argmax(rfit, pop)
+        best = sort(String[String(op) for op in bestset])
+        add!(reg, into, "(program (" * join(best, " ") * "))")
+        return (best, geo_cover(bestset, motif))                  # coverage of the motif (→1 when full)
+    end
     s = MORK.new_space()
     motif_atoms = String["(subgoal-motif $goal $op)" for sg in subgoals for op in sg]
     isempty(motif_atoms) || MORK.space_add_all_sexpr!(s, join(motif_atoms, "\n"))
