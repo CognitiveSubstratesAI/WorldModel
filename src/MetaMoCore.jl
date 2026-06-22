@@ -99,8 +99,27 @@ function _magus_score(g, m, c, risk, dg)
     base - (0.5 * g[1] * caution * risk + conflict) + 0.5 * g[2] * growth * (0.7 * max(0.0, explore) + 0.3 * gshift)
 end
 
+# native-Julia OpenPsi appraisal Ψ (eq #4), bisimulation-validated against lib/metamo openPsiAppraise (1e-6).
+# Lets `govern` run FULLY native (no MeTTa eval) — the lib's ~0.7s tree-walk was all that kept Core slower
+# than CeTTa (~50ms). Updates the 6 modulators from the 4-channel stimulus; goals unchanged.
+function _appraise_native(g, m, st)
+    gInd, gTrans = g[1], g[2]
+    val, ar, ap, res, thr, sec = m[1], m[2], m[3], m[4], m[5], m[6]
+    nov, con, rsk, eff = st[1], st[2], st[3], st[4]
+    bnd(v) = _msig(4.0 * (v - 0.5))
+    af = _msig((ar - 0.5) * 5); tS = exp(gTrans - 0.5); iS = exp(gInd - 0.5)
+    bn = nov * (1 - rsk); dc = (eff + rsk) / 2
+    dV = 0.75*con + 0.25*bn - (0.55*rsk + 0.15*eff)
+    dA = nov*(1 + 0.5*af) + 0.15*rsk - 0.35*eff
+    dAp = 0.65*bn + 0.35*con - 0.75*rsk
+    dR = 0.55*con + 0.35*eff + 0.20*rsk
+    dT = 0.70*rsk + 0.25*dc - 0.15*con
+    dS = 0.80*rsk + 0.20*eff - (0.30*bn + 0.10*con)
+    [bnd(val+dV), bnd(ar+dA*tS), bnd(ap+dAp*tS), bnd(res+dR), bnd(thr+dT*iS), bnd(sec+dS*iS)]
+end
+
 function govern(goals, mods, stimulus, candidates)
-    am = appraise(goals, mods, stimulus)              # Ψ via lib/metamo (cheap, ~0.7s); updates the modulators
+    am = _appraise_native(collect(Float64, goals), collect(Float64, mods), collect(Float64, stimulus))  # Ψ, native
     am === nothing && return nothing
     best = nothing; bestscore = -Inf
     for c in candidates                               # 𝔻 in native Julia — the 8.6s magusDecide → µs

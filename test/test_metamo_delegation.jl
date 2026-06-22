@@ -62,6 +62,9 @@ end
     @test g !== nothing && g.chosen == "wood"               # picks the positive-correlation, zero-risk goal
     @test length(g.goals) == 8 && length(g.mods) == 6       # safe next motive state returned
 
+    # govern is FULLY native (Ψ + 𝔻 in Julia, no MeTTa eval) — both gated against the lib oracle:
+    @test all(isapprox.(MetaMoCore._appraise_native(goals, mods, stim), MetaMoCore.appraise(goals, mods, stim); atol = 1e-6))
+
     # the GOAL LOOP is now motive-governed: mid_step! with a governor (no explicit goal) selects + acts
     loop = CognitiveLoop(reg)
     obs = Observation("f", "vision", "u", "(entity u tree)", :e, Dict(:i => (:tree, :u)))
