@@ -75,17 +75,40 @@ safe region R. Each candidate is a NamedTuple `(; id, corrs, risk, dg)` (8-vecto
 risk, 8-vector ΔG). Returns the chosen action `id` (the goal to pursue) and the safe next motive state.
 This is the goal loop's motive governor (§A.9 / infrastructure: S_motive → MetaMo → action selection).
 """
+# ── native-Julia MAGUS score 𝔻 (eq #10/#11), bisimulation-validated against lib/metamo magusScore (1e-6) ──
+# Grounding magusScore as an op does NOT help (it's called internally by magusBestLoop's rule body, which
+# the grounded-op path never tokenizes). The three-oracle cross-check showed the 8.6s is Core's tree-walker,
+# NOT the algorithm (CeTTa ~50ms, PeTTa/SWI-Prolog ~7.6ms). So `govern` runs the DECISION in native Julia
+# (zero-copy, the documented best path without MeTTa-IL): lib only for the cheap appraisal Ψ.
+_msig(x) = 1.0 / (1.0 + exp(-x))
+# (goal 1-based idx, relevant-modulator 1-based idxs, meta-drive) — gInd=1 gTrans=2 gHelp=3 gCurio=4 gNovel=5 gSelf=6 gEthic=7 gSoc=8
+const _MAGUS_PRIM = [(3, [4], :ind), (4, [2], :trans), (5, [3], :trans), (7, [5, 6], :ind), (8, [1, 3], :dual), (6, [3, 4], :dual)]
+const _MAGUS_GROWTH = [4, 5, 6]   # gCurio, gNovel, gSelf
+function _magus_score(g, m, c, risk, dg)
+    iS = _msig((g[1] - 0.5) * 6); tS = _msig((g[2] - 0.5) * 6)
+    caution = (m[5] + m[6]) / 2; growth = (m[2] + m[3]) / 2
+    base = 0.0
+    for (gi, mi, drv) in _MAGUS_PRIM
+        meta = drv === :ind ? 0.5 + 0.5 * iS : drv === :trans ? 0.5 + 0.5 * tS : 0.5 + 0.25 * (iS + tS)
+        base += g[gi] * (sum(m[k] for k in mi) / length(mi)) * meta * c[gi]
+    end
+    ce = c[4] * c[7]
+    conflict = ce < -0.2 ? exp(abs(ce) * 3) : 0.0
+    explore = sum(c[i] for i in _MAGUS_GROWTH) / 3
+    gshift = sum(clamp(dg[i] * 10, 0, 1) for i in _MAGUS_GROWTH) / 3
+    base - (0.5 * g[1] * caution * risk + conflict) + 0.5 * g[2] * growth * (0.7 * max(0.0, explore) + 0.3 * gshift)
+end
+
 function govern(goals, mods, stimulus, candidates)
-    cand = join(["(action $(c.id) $(_vec(c.corrs)) $(c.risk) $(_vec(c.dg)))" for c in candidates], " ")
-    gov = "(metamoGovern $(_state(goals, mods)) (stimulus $(_vec(stimulus))) ($cand))"
-    # ONE metamoGovern eval, bound via let* — extract all three fields from it (re-evaluating metamoGovern
-    # once per field was 3× the cost: measured 24s → 8s). The residual is the OpenPsi pipeline's eval depth.
-    r = _eval1("(let* ((\$r $gov)) (govResult (actionId (transitionAction \$r)) " *
-        "(motivationGoals (transitionState \$r)) (motivationModulators (transitionState \$r))))")
-    r === nothing && return nothing
-    m = match(r"^\(govResult\s+(\S+)\s+(\([^()]*\))\s+(\([^()]*\))\)$", strip(r))
-    m === nothing && return nothing
-    (chosen = String(m.captures[1]), goals = _parse_vec(m.captures[2]), mods = _parse_vec(m.captures[3]))
+    am = appraise(goals, mods, stimulus)              # Ψ via lib/metamo (cheap, ~0.7s); updates the modulators
+    am === nothing && return nothing
+    best = nothing; bestscore = -Inf
+    for c in candidates                               # 𝔻 in native Julia — the 8.6s magusDecide → µs
+        s = _magus_score(collect(Float64, goals), am, collect(Float64, c.corrs), float(c.risk), collect(Float64, c.dg))
+        s > bestscore && (bestscore = s; best = c)
+    end
+    best === nothing && return nothing
+    (chosen = String(best.id), goals = collect(Float64, goals), mods = am)
 end
 
 end # module MetaMoCore
