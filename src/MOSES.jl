@@ -13,9 +13,10 @@ module MOSES
 
 using ..Registry: SpaceRegistry, add!, query_head
 using Random: AbstractRNG, default_rng
-using MorkSupercompiler: geo_cover   # GeoEvo two-ends coupling kernel (subgoal coverage)
+import MORK
+using MorkSupercompiler: geo_cover, geo_step!, geo_params, Deme   # the REAL geometric GEO-EVO engine
 
-export synthesize!, geo_synthesize!, programs
+export synthesize!, geo_synthesize!, geo_synthesize_geometric!, programs
 
 _to_atom(prog::Vector{String}) = "(program (" * join(prog, " ") * "))"
 
@@ -96,5 +97,51 @@ end
 
 "The synthesized program atoms currently in Sprog."
 programs(reg::SpaceRegistry; into::Symbol=:Sprog) = query_head(reg, into, "program")
+
+# the op-set reachable from a DAG node (the node's program), for fitness over geo_step!'s demes
+function _node_ops(store, id::UInt64)::Set{Symbol}
+    seen = Set{UInt64}(); stack = UInt64[id]; ops = Set{Symbol}()
+    while !isempty(stack)
+        i = pop!(stack)
+        (i in seen || !haskey(store.nodes, i)) && continue
+        push!(seen, i); push!(ops, store.nodes[i].head)
+        append!(stack, store.nodes[i].children)
+    end
+    return ops
+end
+
+"""
+    geo_synthesize_geometric!(reg, fitness, primitives; subgoals=[], goal=:G, gens=5, …) -> (best, align)
+
+GEO-EVO synthesis on the **canonical geometric engine** (`MorkSupercompiler.geo_step!`) per
+`geo_evo_spec.md` — DAGStore demes + EDA-guided variation + the backward subgoal-motif field — NOT the
+Julia GA. `subgoals` (op-name sets) are written as `(subgoal-motif goal op)` atoms and drive the two-ends
+coupling (`steer=true`); `fitness::Vector{String}->Real` scores a deme node by its reachable op-set. Stores
+the best program in Sprog. Returns `(best_ops, align)` where `align = 1 − Ω_align` (→1 as the demes
+converge onto a subgoal). With no `subgoals`, `geo_step!` runs unsteered (plain deme MOSES).
+"""
+function geo_synthesize_geometric!(reg::SpaceRegistry, fitness,
+    primitives::AbstractVector{<:AbstractString}; subgoals::AbstractVector=Any[], goal::Symbol=:G,
+    gens::Int=5, n_inject::Int=12, into::Symbol=:Sprog, rng::AbstractRNG=default_rng())
+    s = MORK.new_space()
+    motif_atoms = String["(subgoal-motif $goal $op)" for sg in subgoals for op in sg]
+    isempty(motif_atoms) || MORK.space_add_all_sexpr!(s, join(motif_atoms, "\n"))
+    p = geo_params(s)
+    d = Deme(1)
+    n = max(1, length(primitives))
+    for prim in primitives
+        d.eda_model[Symbol(prim)] = 1.0 / n        # uniform initial program distribution over primitives
+    end
+    fit(store, id) = float(fitness(String[String(op) for op in _node_ops(store, id)]))
+    res = nothing
+    for _ in 1:gens
+        res = geo_step!([d], s, goal, p; fitness_fn=fit, steer=true, n_inject=n_inject, rng=rng)
+    end
+    isempty(d.fitnesses) && return (String[], 0.0)
+    best = sort(String[String(op) for op in _node_ops(d.store, argmax(d.fitnesses))])
+    add!(reg, into, "(program (" * join(best, " ") * "))")
+    align = (res === nothing || isempty(res.omega_align)) ? 0.0 : 1.0 - res.omega_align[1]
+    return (best, align)
+end
 
 end # module MOSES

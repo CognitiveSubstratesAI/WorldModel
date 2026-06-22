@@ -19,7 +19,7 @@ using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
 using ..Mining: mine!
 using ..SubRepCore: admit_proposed!     # ambient SubRep option certification (delegates to lib/subrep)
-using ..MOSES: geo_synthesize!          # unified synthesis entry: MOSES (no subgoals) | GEO-EVO (subgoals)
+using ..MOSES: geo_synthesize!, geo_synthesize_geometric!   # Julia GA | canonical geometric geo_step! engine
 using Random: default_rng
 
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
@@ -112,10 +112,14 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
-    synthesized = synthesis === nothing ? nothing :    # MOSES (no subgoals) | GEO-EVO (subgoals), one entry
-        geo_synthesize!(reg, synthesis.fitness, synthesis.weakness, synthesis.primitives;
-            gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
-            subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng()))
+    synthesized = synthesis === nothing ? nothing :    # engine=:geometric ⇒ canonical geo_step!; else Julia GA
+        (get(synthesis, :engine, :julia) === :geometric ?
+            geo_synthesize_geometric!(reg, synthesis.fitness, synthesis.primitives;
+                subgoals=get(synthesis, :subgoals, Any[]), goal=get(synthesis, :goal, :G),
+                rng=get(synthesis, :rng, default_rng())) :
+            geo_synthesize!(reg, synthesis.fitness, synthesis.weakness, synthesis.primitives;
+                gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
+                subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))
     loop.tick += 1
     return (; stale=stale, consolidated=consolidated, mined=mined, admitted=admitted,
         synthesized=synthesized)

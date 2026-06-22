@@ -53,3 +53,21 @@ end
     @test !isempty(programs(reg))           # synthesized program stored in the REAL Sprog
     @info "Synthesis live on slow_step!: MOSES align=0; GEO-EVO align=$(round(sG.synthesized[5]; digits=3)) (subgoal-coupled)"
 end
+
+@testset "GEO-EVO on the CANONICAL geometric engine (geo_step!) — live on slow_step!" begin
+    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    seed_world_model!(reg)
+    prims = ["a", "b", "c", "d"]
+    fitness(p) = length(intersect(Set(p), Set(["c", "d"]))) / 2.0   # reward covering the backward subgoal {c,d}
+    loop = CognitiveLoop(reg)
+
+    # engine=:geometric ⇒ MorkSupercompiler geo_step! (DAGStore demes + EDA + backward motif field), per spec
+    sG = slow_step!(loop; t = 1.0,
+        synthesis = (fitness = fitness, weakness = (p) -> 0.0, primitives = prims,
+            engine = :geometric, subgoals = [["c", "d"]], goal = :G, rng = MersenneTwister(7)))
+    @test sG.synthesized !== nothing
+    best, align = sG.synthesized
+    @test align > 0.0                       # the geodesic two-ends coupling drove the demes toward {c,d}
+    @test !isempty(programs(reg))           # program stored in the REAL Sprog via geo_step!
+    @info "GEO-EVO geometric (geo_step!) live on slow_step!: align=$(round(align; digits=3)), best=$best"
+end
