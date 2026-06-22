@@ -31,6 +31,7 @@ include("Beliefs.jl")
 include("PLN.jl")
 include("PLNCore.jl")
 include("SubRep.jl")
+include("SubRepCore.jl")
 include("Mining.jl")
 include("MetaMo.jl")
 include("MOSES.jl")
@@ -49,6 +50,7 @@ using .Beliefs
 using .PLN
 using .PLNCore
 using .SubRep
+using .SubRepCore
 using .Mining
 using .MetaMo
 using .MOSES

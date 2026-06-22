@@ -302,5 +302,6 @@ using Random: MersenneTwister
     end
 end
 
-# WorldModel→lib remediation (PLN): WorldModel runs canonical Core/lib/pln, bisimulation-gated.
+# WorldModel→lib remediation: WorldModel runs canonical Core/lib algorithms, bisimulation-gated.
 include("test_pln_delegation.jl")
+include("test_subrep_delegation.jl")
