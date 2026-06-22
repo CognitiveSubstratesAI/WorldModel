@@ -305,3 +305,4 @@ end
 # WorldModel→lib remediation: WorldModel runs canonical Core/lib algorithms, bisimulation-gated.
 include("test_pln_delegation.jl")
 include("test_subrep_delegation.jl")
+include("test_metamo_delegation.jl")

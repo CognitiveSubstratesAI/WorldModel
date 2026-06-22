@@ -34,6 +34,7 @@ include("SubRep.jl")
 include("SubRepCore.jl")
 include("Mining.jl")
 include("MetaMo.jl")
+include("MetaMoCore.jl")
 include("MOSES.jl")
 include("TransWeave.jl")
 include("Loops.jl")
@@ -53,6 +54,7 @@ using .SubRep
 using .SubRepCore
 using .Mining
 using .MetaMo
+using .MetaMoCore
 using .MOSES
 using .TransWeave
 using .Loops
