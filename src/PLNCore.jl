@@ -14,9 +14,12 @@ module PLNCore
 using MeTTaCore
 using MeTTaCore.Interpreter
 using MeTTaCore.Interpreter.StandardMeTTa
+using ..Registry: SpaceRegistry
+using ..Beliefs: beliefs
+using ..PLN: node_stv
 
-# NOTE: deliberately NOT exporting `STV`/`truth_deduction` — they intentionally mirror PLN's names, so
-# exporting them would collide with `using .PLN` in WorldModel. Callers use `PLNCore.truth_deduction`.
+# NOTE: deliberately NOT exporting `STV`/`truth_deduction`/`select_action` — they intentionally mirror
+# PLN's names, so exporting would collide with `using .PLN` in WorldModel. Callers use `PLNCore.x`.
 
 "A PLN simple truth value (mirrors PLN.STV): strength `s` ∈ [0,1], confidence `c` ∈ [0,1)."
 const STV = NamedTuple{(:s, :c), Tuple{Float64, Float64}}
@@ -55,5 +58,37 @@ replacing PLN.jl's Julia re-implementation. Same five-STV interface; returns the
 """
 truth_deduction(P::STV, Q::STV, R::STV, PQ::STV, QR::STV) =
     _eval_stv("(Truth_Deduction $(_stv_str(P)) $(_stv_str(Q)) $(_stv_str(R)) $(_stv_str(PQ)) $(_stv_str(QR)))")
+
+"""
+    select_action(reg, goal; into=:Srule) -> Vector{Tuple{String,Float64}}
+
+Canonical action-selection over Srule, best-first. Beyond the 1-hop `X ⇒ goal` scan that
+`PLN.select_action` does, this adds the 2-hop TRANSITIVE candidates `X ⇒ Y ⇒ goal`, scored by the
+canonical lib/pln deduction (`truth_deduction`) — multi-hop inference the shallow stand-in cannot do.
+This is the canonical formula on the LIVE goal-loop path (mid_step!), not just available.
+"""
+function select_action(reg::SpaceRegistry, goal::AbstractString; into::Symbol = :Srule)
+    impls = Tuple{String, String, Float64, Float64}[]            # (a, b, s, c) for each a ⇒ b
+    for (k, s, c, _t) in beliefs(reg; into = into)
+        parts = split(String(k), "=>")
+        length(parts) == 2 || continue
+        push!(impls, (String(parts[1]), String(parts[2]), s, c))
+    end
+    score = Dict{String, Float64}()
+    bump!(id, v) = (score[id] = max(get(score, id, -Inf), v))
+    for (a, b, s, c) in impls                                    # 1-hop:  X ⇒ goal
+        b == goal && bump!(a, s * c)
+    end
+    for (a, b, sab, cab) in impls                                # 2-hop:  X ⇒ Y ⇒ goal (deduction)
+        for (y, g, sbg, cbg) in impls
+            (y == b && g == goal) || continue
+            tv = truth_deduction(node_stv(reg, a; into), node_stv(reg, b; into),
+                node_stv(reg, goal; into), (s = sab, c = cab), (s = sbg, c = cbg))
+            tv === nothing || bump!(a, tv.s * tv.c)
+        end
+    end
+    out = sort!(collect(score); by = x -> -x[2])
+    return [(id, v) for (id, v) in out]
+end
 
 end # module PLNCore

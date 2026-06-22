@@ -16,7 +16,7 @@ using ..Braid:
 using ..Beliefs: stale_beliefs
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
-using ..PLN: select_action
+using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
 using ..Mining: mine!
 
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!

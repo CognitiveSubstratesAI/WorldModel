@@ -38,3 +38,29 @@ mk(s, c) = (s = s, c = c)
     @test agree == 80
     @info "PLN delegation bisimulation: $agree/80 cases agree (Julia formula ≡ canonical lib/pln)"
 end
+
+@testset "PLN canonical multi-hop action-selection on the LIVE path (mid_step!)" begin
+    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    seed_world_model!(reg)
+    # a 2-hop chain to the goal `axe`:  build ⇒ make_axe ⇒ axe  (node STVs chosen so the deduction
+    # consistency preconditions pass → the transitive candidate scores > 0)
+    for (n, s, c) in (("build", 0.9, 0.9), ("make_axe", 0.8, 0.9), ("axe", 0.7, 0.9))
+        assert_belief!(reg, n, s, c, 0.0)
+    end
+    assert_implication!(reg, "build", "make_axe", 0.85, 0.9, 0.0)
+    assert_implication!(reg, "make_axe", "axe", 0.8, 0.9, 0.0)
+
+    pln1 = [a[1] for a in WorldModel.PLN.select_action(reg, "axe")]      # shallow 1-hop scan
+    core = [a[1] for a in WorldModel.PLNCore.select_action(reg, "axe")]  # canonical 1-hop + 2-hop
+
+    @test "make_axe" in pln1                       # both find the direct action
+    @test !("build" in pln1)                       # the 1-hop scan MISSES the transitive action
+    @test "make_axe" in core && "build" in core    # canonical inference finds the deeper action too
+
+    # the live goal loop now selects via the canonical multi-hop selector
+    loop = CognitiveLoop(reg)
+    obs = Observation("f", "vision", "u", "(entity u x)", :e, Dict(:i => (:x, :u)))
+    rr = mid_step!(loop, obs; goal = "axe")
+    @test rr.action !== nothing && rr.action[1] in core
+    @info "PLN live-path: canonical multi-hop finds transitive `build` the 1-hop scan misses; mid_step! uses it"
+end
