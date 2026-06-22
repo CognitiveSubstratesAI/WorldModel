@@ -267,6 +267,23 @@ using Random: MersenneTwister
         @test !isempty(programs(reg8))
     end
 
+    @testset "GEO-EVO two-ends — synthesis CONVERGES onto the backward subgoal motif (§3.4)" begin
+        reg8b = SpaceRegistry(manifest(; store=mktempdir())); seed_world_model!(reg8b)
+        prims = ["a", "b", "c", "d", "e"]
+        base(p) = 0.0          # neutral base fitness — only the two-ends pull + Occam drive selection
+        weak(p) = length(p)    # weakness = program length
+        sg = [Set(["a", "b"])] # one backward subgoal motif (a SUBSET of the primitives)
+        # WITHOUT the coupling (μ=0) ≡ the F_eff slice — no pull toward the subgoal
+        _, _, _, _, al0 = geo_synthesize!(reg8b, base, weak, prims;
+            gamma=0.1, mu=0.0, subgoals=sg, pop=30, gens=40, rng=MersenneTwister(5))
+        # WITH the coupling (μ=1): forward synthesis is pulled toward the backward subgoal motif
+        bestA, _, _, _, alA = geo_synthesize!(reg8b, base, weak, prims;
+            gamma=0.1, mu=1.0, subgoals=sg, pop=30, gens=40, rng=MersenneTwister(5))
+        @test alA > al0                          # the two-ends term increased subgoal coverage
+        @test alA ≈ 1.0                          # CONVERGED: best covers the whole subgoal motif {a,b}
+        @test ("a" in bestA) && ("b" in bestA)   # both subgoal ops are present in the best program
+    end
+
     @testset "TransWeave transfer over Sxfer — BD-residual order-effect certificate (App D, R9)" begin
         reg9 = SpaceRegistry(manifest(; store=mktempdir()))
         seed_world_model!(reg9)

@@ -13,6 +13,7 @@ module MOSES
 
 using ..Registry: SpaceRegistry, add!, query_head
 using Random: AbstractRNG, default_rng
+using MorkSupercompiler: geo_cover   # GeoEvo two-ends coupling kernel (subgoal coverage)
 
 export synthesize!, geo_synthesize!, programs
 
@@ -63,22 +64,34 @@ function synthesize!(reg::SpaceRegistry, fitness,
 end
 
 """
-    geo_synthesize!(reg, fitness, weakness, primitives; gamma=0.3, kwargs...) -> (best, F_eff, F, W)
+    geo_synthesize!(reg, fitness, weakness, primitives; gamma=0.3, mu=0.0, subgoals=[], kwargs...)
+        -> (best, Score, F, W, align)
 
-GEO-EVO program synthesis (Geo-Evo §3.1/§3.10 — the weakness-regularizer-everywhere core): evolve programs
-under the EFFECTIVE fitness `F_eff = F − γ·W`, where `weakness::Vector{String}->Real` is the
-complexity/fragility/overfit regularizer (the geodesic Occam prior that steers toward robust near-optima,
-not fragile high-fitness ones). Returns the best program and its `(F_eff, F, W)`.
+GEO-EVO program synthesis. The §3.1/§3.10 weakness regularizer PLUS the §3.4/§3.5 **two-ends-of-the-path
+coupling**: programs are pulled toward the nearest BACKWARD subgoal motif (a set of primitive names a
+subgoal needs) via the GeoEvo `geo_cover` kernel. The control-law score is
 
-HONEST DEPTH LIMIT: GEO-EVO's full two-ends-of-the-path co-adaptation — backward SubRep/PLN subgoal demes,
-deme↔subgoal Sinkhorn pairing, corridor tracking, the Schrödinger-bridge action functional — is the deeper
-system (Geo-Evo.pdf). This is the effective-fitness core, not faked as the full method.
+    Score(p) = F(p) − γ·W(p) + μ·align(p),   align(p) = maxₖ Cover(ops(p), motifₖ)
+
+so forward synthesis (population) and backward subgoals co-adapt — the population evolves toward covering a
+subgoal while staying weakness-regularized. With the default (`μ=0`, no `subgoals`) this reduces EXACTLY to
+the F_eff slice `F − γW`. `subgoals` is a list of `Set`/collection of primitive-name strings. Returns the
+best program and `(Score, F, W, align)`.
+
+NOTE: this closes the two-ends loop at the WorldModel program level because `synthesize!`'s mutation samples
+from the primitive set (so selection under `align` can reach subgoal ops). The DAGStore `geo_step!` engine
+(MorkSupercompiler) has a separate forward-variation closure gap (random head mutation) — tracked as (a).
+Still deferred (Geo-Evo.pdf): Sinkhorn deme↔subgoal pairing over many demes, corridor/bandit orchestration,
+the Schrödinger-bridge action functional.
 """
 function geo_synthesize!(reg::SpaceRegistry, fitness, weakness,
-    primitives::AbstractVector{<:AbstractString}; gamma::Real=0.3, kwargs...)
-    feff(p) = float(fitness(p)) - gamma * float(weakness(p))
-    best, _ = synthesize!(reg, feff, primitives; kwargs...)
-    return (best, feff(best), float(fitness(best)), float(weakness(best)))
+    primitives::AbstractVector{<:AbstractString}; gamma::Real=0.3, mu::Real=0.0,
+    subgoals::AbstractVector=Any[], kwargs...)
+    motifs = [Set(Symbol(x) for x in sg) for sg in subgoals]
+    align(p) = isempty(motifs) ? 0.0 : maximum(geo_cover(Set(Symbol.(p)), m) for m in motifs)
+    score(p) = float(fitness(p)) - gamma * float(weakness(p)) + mu * align(p)
+    best, _ = synthesize!(reg, score, primitives; kwargs...)
+    return (best, score(best), float(fitness(best)), float(weakness(best)), align(best))
 end
 
 "The synthesized program atoms currently in Sprog."
