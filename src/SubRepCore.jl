@@ -11,6 +11,7 @@ module SubRepCore
 using MeTTaCore
 using MeTTaCore.Interpreter
 using MeTTaCore.Interpreter.StandardMeTTa
+using ..Registry: SpaceRegistry, add!, query_head
 
 const _SPACE = Ref{Any}(nothing)
 function _space()
@@ -45,5 +46,54 @@ a *complementary* option whose CDS margin lies within −ε (`margin ≥ −ε`)
 """
 pds_admit(dr::Real, dn::AbstractVector{<:Real}, eps::Real) =
     _bool("(pds-eps-admit $dr $(_vec(dn)) $eps)")
+
+# ── Ambient-loop option admission (the live slow_step! SubRep process) ───────────────────────────────
+# The environment / goal loop PROPOSES option-candidates with their backed-up improvement (Δr, Δn); the
+# ambient loop CERTIFIES them via canonical lib/subrep — admitting dominating options (CDS) and, as the
+# capability SubRep.jl lacks, complementary options whose margin is within −ε (PDS).
+
+"Propose an option candidate `(Δr, Δn)` for ambient SubRep certification (staged in Sopt)."
+propose_option!(reg::SpaceRegistry, id::AbstractString, dr::Real, dn::AbstractVector{<:Real};
+    into::Symbol = :Sopt) = add!(reg, into, "(option-candidate $id $dr $(join(string.(dn), " ")))")
+
+_admitted_ids(reg, into) =
+    Set(String[t[2] for t in (split(strip(a)[2:(end - 1)]) for a in query_head(reg, into, "option"))
+               if length(t) >= 2 && t[1] == "option"])
+
+function _store_option!(reg, id, dr, dn, gate, into)
+    add!(reg, into, "(option $id $dr $(join(string.(dn), " ")))")
+    add!(reg, into, "(subrep-cert $id $(cds_margin(dr, dn)) $gate)")
+end
+
+"""
+    admit_proposed!(reg; eps_pds=0.1, into=:Sopt) -> (; cds, pds, rejected)
+
+The ambient SubRep stage: screen every staged `(option-candidate id Δr Δn…)` through canonical lib/subrep.
+Admit via CDS (margin ≥ 0, dominates the baseline) — else via PDS-ε (margin ≥ −ε, a complementary option
+CDS rejects, the NEW capability) — else reject. Admitted options + their certificate (gate = CDS|PDS) are
+stored in Sopt. Idempotent: candidates already admitted are skipped. Returns the admitted/rejected ids.
+"""
+function admit_proposed!(reg::SpaceRegistry; eps_pds::Real = 0.1, into::Symbol = :Sopt)
+    done = _admitted_ids(reg, into)
+    cds = String[]; pds = String[]; rej = String[]
+    for a in query_head(reg, into, "option-candidate")
+        toks = split(strip(a)[2:(end - 1)])                 # ["option-candidate", id, dr, dn…]
+        length(toks) >= 3 || continue
+        id = String(toks[2])
+        id in done && continue
+        dr = tryparse(Float64, toks[3])
+        dn = [tryparse(Float64, t) for t in toks[4:end]]
+        (dr === nothing || any(isnothing, dn)) && continue
+        if cds_admit(dr, dn, 0.0)
+            _store_option!(reg, id, dr, dn, "CDS", into); push!(cds, id)
+        elseif pds_admit(dr, dn, eps_pds)
+            _store_option!(reg, id, dr, dn, "PDS", into); push!(pds, id)
+        else
+            push!(rej, id)
+        end
+        push!(done, id)
+    end
+    (; cds = cds, pds = pds, rejected = rej)
+end
 
 end # module SubRepCore
