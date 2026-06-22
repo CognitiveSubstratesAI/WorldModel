@@ -306,3 +306,4 @@ end
 include("test_pln_delegation.jl")
 include("test_subrep_delegation.jl")
 include("test_metamo_delegation.jl")
+include("test_moses_delegation.jl")

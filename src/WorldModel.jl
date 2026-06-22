@@ -36,6 +36,7 @@ include("Mining.jl")
 include("MetaMo.jl")
 include("MetaMoCore.jl")
 include("MOSES.jl")
+include("MOSESCore.jl")
 include("TransWeave.jl")
 include("Loops.jl")
 
@@ -56,6 +57,7 @@ using .Mining
 using .MetaMo
 using .MetaMoCore
 using .MOSES
+using .MOSESCore
 using .TransWeave
 using .Loops
 
