@@ -19,6 +19,8 @@ using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
 using ..Mining: mine!
 using ..SubRepCore: admit_proposed!     # ambient SubRep option certification (delegates to lib/subrep)
+using ..MOSES: geo_synthesize!          # unified synthesis entry: MOSES (no subgoals) | GEO-EVO (subgoals)
+using Random: default_rng
 
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 
@@ -95,19 +97,28 @@ end
 
 SLOW path (§3.4 / §6.1.4): the AMBIENT cycle — re-validate stale beliefs (R10: confidence decayed below
 `threshold` at time `t`), consolidate Shmh episodes into a template (schema formation), MINE recurring
-patterns (WILLIAM over `mine_from` → Smine), and CERTIFY proposed option-candidates through canonical
-SubRep (lib/subrep CDS+PDS) into Sopt. Returns `(; stale, consolidated, mined, admitted)`. Program
-synthesis (MOSES → Sprog) plugs in here when that process has a source. Advances the tick.
+patterns (WILLIAM over `mine_from` → Smine), CERTIFY proposed option-candidates through canonical SubRep
+(lib/subrep CDS+PDS) into Sopt, and — when a `synthesis` task is supplied — SYNTHESIZE a program into
+Sprog via the unified `geo_synthesize!` entry. The synthesis MODE follows the spec's two-ends principle:
+no backward subgoals ⇒ MOSES (`Score = F − γW`); backward subgoals + `μ>0` ⇒ GEO-EVO
+(`Score = F − γW + μ·align`). `synthesis` is a NamedTuple `(; fitness, weakness, primitives[, gamma, mu,
+subgoals, rng])`. Returns `(; stale, consolidated, mined, admitted, synthesized)`. Advances the tick.
 """
 function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::Real=0.1,
-    template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1)
+    template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
+    synthesis=nothing)
     reg = loop.reg
     stale = stale_beliefs(reg, t; threshold=threshold, lambda=lambda)
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
+    synthesized = synthesis === nothing ? nothing :    # MOSES (no subgoals) | GEO-EVO (subgoals), one entry
+        geo_synthesize!(reg, synthesis.fitness, synthesis.weakness, synthesis.primitives;
+            gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
+            subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng()))
     loop.tick += 1
-    return (; stale=stale, consolidated=consolidated, mined=mined, admitted=admitted)
+    return (; stale=stale, consolidated=consolidated, mined=mined, admitted=admitted,
+        synthesized=synthesized)
 end
 
 """

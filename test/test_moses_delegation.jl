@@ -7,6 +7,7 @@
 # (out-of-band, as the lib's own test keeps it); the fast ops are exercised here.
 
 using Test
+using Random
 using WorldModel
 
 const MOSES = WorldModel.MOSES
@@ -27,4 +28,28 @@ const MOSESCore = WorldModel.MOSESCore
     @test !isdefined(MOSES, :score_on_table)              # no truth-table behavioral scoring
     @test !isdefined(MOSES, :run_moses)                   # no metapopulation search
     @info "MOSES delegation: lib/MOSES scores leaf `a`=-1 on OR + runs the metapopulation loop (full ~69s OR-induction out-of-band)"
+end
+
+@testset "MOSES/GEO-EVO synthesis on the LIVE ambient path (slow_step!) — the unified mode toggle" begin
+    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    seed_world_model!(reg)
+    prims = ["a", "b", "c", "d"]
+    fitness(p) = ("a" in p) ? 1.0 : 0.0     # reward using primitive `a`
+    weakness(p) = length(p) * 0.1           # penalize length
+    loop = CognitiveLoop(reg)
+
+    # MOSES mode — no backward subgoals: Score = F − γW, align ≡ 0 (forward-only)
+    sM = slow_step!(loop; t = 1.0,
+        synthesis = (fitness = fitness, weakness = weakness, primitives = prims, rng = MersenneTwister(1)))
+    @test sM.synthesized !== nothing
+    @test sM.synthesized[5] == 0.0          # align == 0 ⇒ MOSES (no two-ends coupling)
+
+    # GEO-EVO mode — backward subgoal motif {c,d} + μ>0: the two-ends coupling pulls toward covering it
+    sG = slow_step!(loop; t = 2.0,
+        synthesis = (fitness = fitness, weakness = weakness, primitives = prims,
+            mu = 3.0, subgoals = [["c", "d"]], rng = MersenneTwister(2)))
+    @test sG.synthesized !== nothing
+    @test sG.synthesized[5] > 0.0           # align > 0 ⇒ GEO-EVO two-ends engaged (program covers the subgoal)
+    @test !isempty(programs(reg))           # synthesized program stored in the REAL Sprog
+    @info "Synthesis live on slow_step!: MOSES align=0; GEO-EVO align=$(round(sG.synthesized[5]; digits=3)) (subgoal-coupled)"
 end
