@@ -78,11 +78,14 @@ This is the goal loop's motive governor (§A.9 / infrastructure: S_motive → Me
 function govern(goals, mods, stimulus, candidates)
     cand = join(["(action $(c.id) $(_vec(c.corrs)) $(c.risk) $(_vec(c.dg)))" for c in candidates], " ")
     gov = "(metamoGovern $(_state(goals, mods)) (stimulus $(_vec(stimulus))) ($cand))"
-    chosen = _eval1("(actionId (transitionAction $gov))")
-    chosen === nothing && return nothing
-    (chosen = String(chosen),
-        goals = _parse_vec(_eval1("(motivationGoals (transitionState $gov))")),
-        mods = _parse_vec(_eval1("(motivationModulators (transitionState $gov))")))
+    # ONE metamoGovern eval, bound via let* — extract all three fields from it (re-evaluating metamoGovern
+    # once per field was 3× the cost: measured 24s → 8s). The residual is the OpenPsi pipeline's eval depth.
+    r = _eval1("(let* ((\$r $gov)) (govResult (actionId (transitionAction \$r)) " *
+        "(motivationGoals (transitionState \$r)) (motivationModulators (transitionState \$r))))")
+    r === nothing && return nothing
+    m = match(r"^\(govResult\s+(\S+)\s+(\([^()]*\))\s+(\([^()]*\))\)$", strip(r))
+    m === nothing && return nothing
+    (chosen = String(m.captures[1]), goals = _parse_vec(m.captures[2]), mods = _parse_vec(m.captures[3]))
 end
 
 end # module MetaMoCore
