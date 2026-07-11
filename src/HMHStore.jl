@@ -9,7 +9,7 @@
 
 module HMHStore
 
-using FactorVSA: HV, BipolarMAP, random_hv
+using FactorVSA: HV, BipolarMAP, random_hv, content_hv
 using HMH: RoleBook, role!, Episode, encode_episode, recover_slot, consolidate
 
 export HMHIndex, hmh_fresh, store_episode!, retrieve, densify, record_keys, record_pointers
@@ -35,13 +35,13 @@ end
 
 "A fresh, empty HMH index of dimension `dim`."
 hmh_fresh(dim::Int=DEFAULT_DIM) = HMHIndex(
-    dim, RoleBook(dim), Dict{Symbol, HV{BipolarMAP}}(), random_hv(BipolarMAP, dim),
+    dim, RoleBook(dim), Dict{Symbol, HV{BipolarMAP}}(), content_hv("__hmh_default_schema", dim),
     Dict{Symbol, Episode}(), Dict{Symbol, HV{BipolarMAP}}(),
     Dict{Symbol, Vector{String}}())
 
-# deterministic filler hypervector for a symbol (lazily created, stable within an index)
+# deterministic filler hypervector for a symbol (content-seeded ⇒ stable within AND across processes)
 _filler!(idx::HMHIndex, sym::Symbol) =
-    get!(() -> random_hv(BipolarMAP, idx.dim), idx.fillers, sym)
+    get!(() -> content_hv(sym, idx.dim), idx.fillers, sym)
 
 _episode(idx::HMHIndex, slots::AbstractDict{Symbol, Tuple{Symbol, Symbol}}) =
     Episode(
