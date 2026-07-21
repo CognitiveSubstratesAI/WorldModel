@@ -11,12 +11,13 @@ module Braid
 
 using ..Registry: SpaceRegistry, add!, query_head, hmh_index, dense_store
 using ..HMHStore: store_episode!, retrieve, densify
-using ..Dense: put_vec!, get_vec, attach_predictor!, predict_dense
+using ..Dense: put_vec!, get_vec, attach_predictor!, predict_dense, train_dense!
 using ..Kernel: kernel_mu
+using Random: AbstractRNG, default_rng
 
 export content_id, store_evidence!, ground!, evidence_of, fetch_evidence
 export encode_hmh!, retrieve_hmh, densify_hmh
-export lift!, kernel_summary!, attach_dynamics!, predict_dynamics
+export lift!, kernel_summary!, attach_dynamics!, predict_dynamics, train_dynamics!
 
 "Content ID for an evidence payload — stable content addressing (§4.3)."
 content_id(payload) = string(hash(payload) % 0xffffffff; base=16, pad=8)
@@ -154,5 +155,26 @@ predict_dynamics(
     reg::SpaceRegistry, x::AbstractVector{<:Real}; into::Symbol=:Sdyn, kwargs...
 ) =
     predict_dense(dense_store(reg, into), x; kwargs...)
+
+"""
+    train_dynamics!(reg, transitions; hidden=64, lr=0.01, epochs=100, adam=false, rng, into=:Sdyn)
+        -> (dense store, energy history)
+
+Train the Sdyn FabricPC forward model on `(x_t → x_{t+1})` `transitions` — a vector of `(Vector, Vector)`
+pairs of equal length — so `predict_dynamics`/`fast_step!` become a LEARNED forward model instead of the
+untrained `initialize_params` graph. Stacks the pairs into rows-are-batch matrices and delegates to
+`Dense.train_dense!`, which attaches a fresh `x → h → y` predictor sized to the data if none is bound and
+writes the trained params back into the Sdyn dense store. This closes the ADR-061 "Sdyn in-loop training"
+gap (structure + forward pass were live; only the `train_pcn` call was missing).
+"""
+function train_dynamics!(reg::SpaceRegistry, transitions::AbstractVector;
+    hidden::Int=64, lr::Real=0.01, epochs::Real=100, adam::Bool=false,
+    rng::AbstractRNG=default_rng(), into::Symbol=:Sdyn)
+    isempty(transitions) && error("train_dynamics!: no transitions to train on")
+    X = permutedims(reduce(hcat, [Float64.(first(t)) for t in transitions]))   # (N, D_in)  rows = batch
+    Y = permutedims(reduce(hcat, [Float64.(last(t)) for t in transitions]))    # (N, D_out) rows = batch
+    return train_dense!(dense_store(reg, into), X, Y;
+        hidden=hidden, lr=lr, epochs=epochs, adam=adam, rng=rng)
+end
 
 end # module Braid

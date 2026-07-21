@@ -7,11 +7,12 @@
 
 module Dense
 
-using FabricPC: graph, Linear, Edge, predict, initialize_params, TaskMap, InferenceSGD
+using FabricPC: graph, Linear, Edge, predict, initialize_params, TaskMap, InferenceSGD,
+    train_pcn, AdamW
 using Random: AbstractRNG, default_rng
 
 export DenseStore, dense_fresh, put_vec!, get_vec, vec_keys, has_vec,
-    attach_predictor!, predict_dense, has_predictor
+    attach_predictor!, predict_dense, has_predictor, train_dense!
 
 "A dense Space: named dense vectors + an optional FabricPC predictive-coding model (Sdyn)."
 mutable struct DenseStore
@@ -68,6 +69,31 @@ function predict_dense(
     params, structure = ds.model
     X = reshape(Float64.(x), 1, length(x))            # batch of 1 (rows = batch, cols = features)
     return vec(predict(params, structure, Dict("x" => X), rng; output_task="y"))
+end
+
+"""
+    train_dense!(ds, X, Y; hidden=64, lr=0.01, epochs=100, adam=false, rng) -> (ds, energy_history)
+
+Fit this dense Space's FabricPC predictor to the `(X → Y)` batch (rows = batch, cols = features) via
+`train_pcn` (local predictive-coding learning — NO backprop), then WRITE the trained params back into
+`ds.model` so `predict_dense`/`predict_dynamics` use the LEARNED model. If no predictor is bound yet an
+`x → h → y` graph sized to the data (`in=size(X,2)`, `hidden`, `out=size(Y,2)`) is attached first.
+`opt` is a plain-SGD `Real` lr (`adam=false`) or an `AdamW` (`adam=true`). Returns the store and the
+`[epoch][batch]` energy history. This is the ONLY place FabricPC training is invoked (ADR-061 Sdyn gap).
+"""
+function train_dense!(ds::DenseStore, X::AbstractMatrix{<:Real}, Y::AbstractMatrix{<:Real};
+    hidden::Int=64, lr::Real=0.01, epochs::Real=100, adam::Bool=false,
+    rng::AbstractRNG=default_rng())
+    size(X, 1) == size(Y, 1) || error(
+        "train_dense!: X and Y must have equal batch rows, got $(size(X,1)) vs $(size(Y,1))")
+    ds.model === nothing && attach_predictor!(ds, size(X, 2), hidden, size(Y, 2); rng=rng)
+    params, structure = ds.model
+    loader = [Dict("x" => Matrix{Float32}(X), "y" => Matrix{Float32}(Y))]
+    opt = adam ? AdamW(params; lr=lr) : Float32(lr)
+    params, energies, _ = train_pcn(params, structure, loader, opt;
+        num_epochs=epochs, rng=rng, verbose=false)
+    ds.model = (params, structure)                     # write trained weights back (train_pcn is functional)
+    return ds, energies
 end
 
 end # module Dense

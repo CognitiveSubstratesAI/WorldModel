@@ -78,8 +78,8 @@ export encode_hmh!, retrieve_hmh, densify_hmh
 # HMH store surface (Shmh backend)
 export HMHIndex, record_keys, record_pointers
 # Dense — green braid arrows (Λ lift, kernel μR, Sdyn FabricPC predictor) + dense store surface
-export lift!, kernel_summary!, attach_dynamics!, predict_dynamics
-export DenseStore, dense_store, get_vec, has_vec, vec_keys, has_predictor
+export lift!, kernel_summary!, attach_dynamics!, predict_dynamics, train_dynamics!
+export DenseStore, dense_store, get_vec, has_vec, vec_keys, has_predictor, train_dense!
 # Kernel / MKME service (Skernel, MORKTensorNetworks-backed)
 export kernel_mu, gram, mmd
 # PLN — uncertain inference over Srule (the goal loop's reasoning process)
