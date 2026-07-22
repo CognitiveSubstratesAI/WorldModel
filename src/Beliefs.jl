@@ -8,8 +8,9 @@
 module Beliefs
 
 using ..Registry: SpaceRegistry, add!, query_head
+using ..Braid: evidence_of
 
-export assert_belief!, beliefs, decayed_confidence, stale_beliefs
+export assert_belief!, beliefs, decayed_confidence, stale_beliefs, revalidate_belief!
 
 """
     assert_belief!(reg, key, s, c, t; into=:Srule)
@@ -70,6 +71,45 @@ Effective confidence at time `t` under exponential staleness decay: `c₀·exp(�
 """
 decayed_confidence(c0::Real, t0::Real, t::Real; lambda::Real=0.1) =
     c0 * exp(-lambda * (t - t0))
+
+"""
+    revalidate_belief!(reg, key, t; into=:Srule, evidence_into=:Sent) -> Union{NamedTuple,Nothing}
+
+R10 RE-VALIDATION: refresh a stale belief's CONFIDENCE from the evidence that currently anchors the
+symbol, and reset its decay clock to `t`. Returns the refreshed `(key, s, c, t)`, or `nothing` when
+there is no such belief or no evidence.
+
+This is the half of R10 that was missing: `stale_beliefs` detected decay and returned a list that
+nothing consumed, so "factor-graph PLN tightens beliefs" (§7 ambient loop) was detection-only.
+
+Confidence is derived from the EVIDENCE COUNT through our canonical count→confidence map — the same
+`Truth_w2c(w) = w/(w+1)` that `Core/lib/pln` uses (k = 1; verified live: `w2c(1)=0.5`, `w2c(3)=0.75`,
+and `w2c∘c2w` is the identity). Using the canonical map matters: a revalidated confidence lands on the
+SAME evidence scale as every other truth value in the system, so revision stays coherent. (This is
+exactly why PeTTaChainer's k=800 must not be imported — see
+`docs/specs/pln_node_base_rate_spec.md` §2b.)
+
+**Strength is PRESERVED.** Re-validation refreshes *how confident we are given current evidence*; it
+does not invent *what we believe*. Deriving a node's base-rate STRENGTH is a separate and
+semantically-loaded step (spec §6 — it needs an extension/universe notion, not just a count).
+
+**No evidence ⇒ `nothing`**: the belief is left to keep decaying rather than propped up. That is the
+honest outcome for a symbol nothing supports any more, and it keeps decay meaningful — a belief can
+only be rescued by evidence that actually exists.
+"""
+function revalidate_belief!(reg::SpaceRegistry, key::AbstractString, t::Real;
+    into::Symbol=:Srule, evidence_into::Symbol=:Sent)
+    n = length(evidence_of(reg, key; into=evidence_into))
+    n == 0 && return nothing                       # unsupported ⇒ let it decay
+    cur = nothing
+    for (k, s, _c, _t0) in beliefs(reg; into=into)
+        if k == key; cur = s; break; end
+    end
+    cur === nothing && return nothing              # nothing to revalidate
+    c_new = n / (n + 1)                            # canonical Truth_w2c(n), k = 1
+    assert_belief!(reg, key, cur, c_new, t; into=into)   # latest-wins ⇒ supersedes the stale row
+    return (key=String(key), s=cur, c=c_new, t=float(t))
+end
 
 """
     stale_beliefs(reg, t; threshold=0.5, lambda=0.1, into=:Srule) -> Vector{String}

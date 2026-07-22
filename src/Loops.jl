@@ -13,7 +13,7 @@ module Loops
 using ..Registry: SpaceRegistry, dense_store, hmh_index, has_space
 using ..Braid:
     store_evidence!, ground!, encode_hmh!, lift!, kernel_summary!, predict_dynamics
-using ..Beliefs: stale_beliefs
+using ..Beliefs: stale_beliefs, revalidate_belief!
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
@@ -110,13 +110,28 @@ patterns (WILLIAM over `mine_from` → Smine), CERTIFY proposed option-candidate
 Sprog via the unified `geo_synthesize!` entry. The synthesis MODE follows the spec's two-ends principle:
 no backward subgoals ⇒ MOSES (`Score = F − γW`); backward subgoals + `μ>0` ⇒ GEO-EVO
 (`Score = F − γW + μ·align`). `synthesis` is a NamedTuple `(; fitness, weakness, primitives[, gamma, mu,
-subgoals, rng])`. Returns `(; stale, consolidated, mined, admitted, synthesized)`. Advances the tick.
+subgoals, rng])`. Returns `(; stale, revalidated, consolidated, mined, admitted, synthesized)`.
+Advances the tick.
+
+`stale` are the beliefs whose confidence decayed below `threshold`; `revalidated` are the ones actually
+REFRESHED from surviving evidence this step (≤ `revalidate`, the ambient budget). A stale key with no
+evidence left is deliberately absent from `revalidated` — it keeps decaying rather than being propped up.
 """
 function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::Real=0.1,
     template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
-    synthesis=nothing)
+    revalidate::Int=16, synthesis=nothing)
     reg = loop.reg
     stale = stale_beliefs(reg, t; threshold=threshold, lambda=lambda)
+    # R10 CLOSES THE LOOP: re-validate the decayed beliefs instead of only reporting them. Until now
+    # `stale` was computed and returned and NOTHING consumed it (the only reference to `.stale` in the
+    # whole codebase was the return below), so §7's "factor-graph PLN tightens beliefs" was
+    # detection-only. Budgeted (`revalidate`) because this is ambient background work, not a barrier:
+    # each key costs an evidence lookup, and a symbol with no surviving evidence is deliberately left
+    # to keep decaying (revalidate_belief! returns nothing) rather than propped up.
+    revalidated = String[]
+    for key in Iterators.take(stale, max(revalidate, 0))
+        revalidate_belief!(reg, key, t; into=:Srule) === nothing || push!(revalidated, key)
+    end
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
@@ -129,8 +144,8 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
                 gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
                 subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))
     loop.tick += 1
-    return (; stale=stale, consolidated=consolidated, mined=mined, admitted=admitted,
-        synthesized=synthesized)
+    return (; stale=stale, revalidated=revalidated, consolidated=consolidated, mined=mined,
+        admitted=admitted, synthesized=synthesized)
 end
 
 """

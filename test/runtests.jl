@@ -72,6 +72,42 @@ using Random: MersenneTwister
         @test "Conductor_u1" in st && "Trigger_u1" in st
     end
 
+    @testset "R10 re-validation closes the ambient loop (slow_step! consumes `stale`)" begin
+        # Until now `stale` was DETECTION-ONLY: slow_step! computed it and returned it, and the only
+        # reference to `.stale` in the whole codebase was that return — so §7's "factor-graph PLN
+        # tightens beliefs" never tightened anything. A decayed belief stayed decayed forever.
+        r2 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r2)
+        # `supported` is anchored by two evidence shards; `orphan` is believed but nothing supports it.
+        c1 = store_evidence!(r2, "saw-a-tree"; modality = "vision")
+        ground!(r2, "supported", "(entity supported tree)", c1)
+        c2 = store_evidence!(r2, "saw-it-again"; modality = "vision")
+        ground!(r2, "supported", "(entity supported tree)", c2)
+        assert_belief!(r2, "supported", 0.8, 0.9, 0.0)
+        assert_belief!(r2, "orphan", 0.8, 0.9, 0.0)
+
+        t = 40.0                                        # far enough out that BOTH decay below threshold
+        before = stale_beliefs(r2, t; threshold = 0.3, lambda = 0.1)
+        @test "supported" in before && "orphan" in before
+
+        res = slow_step!(CognitiveLoop(r2); t = t, threshold = 0.3, lambda = 0.1)
+        @test "supported" in res.revalidated            # evidence survives ⇒ refreshed…
+        @test !("orphan" in res.revalidated)            # …no evidence ⇒ left to decay, NOT propped up
+
+        # confidence came from the EVIDENCE COUNT through our canonical map (k=1): 2 shards ⇒ 2/(2+1)
+        cs = Dict(k => c for (k, _s, c, _t) in beliefs(r2))
+        @test isapprox(cs["supported"], 2 / 3; atol = 1e-9)
+        @test isapprox(cs["orphan"], 0.9; atol = 1e-9)  # untouched
+        # strength is PRESERVED — revalidation refreshes confidence, it does not invent belief
+        ss = Dict(k => s for (k, s, _c, _t) in beliefs(r2))
+        @test isapprox(ss["supported"], 0.8; atol = 1e-9)
+
+        # and the loop actually CLOSES: the refreshed key is no longer stale at the same `t`
+        after = stale_beliefs(r2, t; threshold = 0.3, lambda = 0.1)
+        @test !("supported" in after)
+        @test "orphan" in after
+        @test length(after) < length(before)            # `stale` SHRINKS (was: unchanged forever)
+    end
+
     @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
         # two affordance trials encoded as role-filler episodes into Shmh (real FactorVSA hypervectors)
         encode_hmh!(reg, :trial1,
