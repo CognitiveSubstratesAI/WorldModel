@@ -59,7 +59,13 @@ using .Beliefs
 # BISIMULATION ORACLE that gates swapping (agreement is the safety property), not the public interface.
 # NOTE the return shapes differ: PLNCore.select_action yields (id, score::Float64); PLN's yields (id, STV).
 using .PLN: STV, node_stv, impl_stv, assert_implication!, deduce
-using .PLNCore: truth_deduction, select_action, refresh_base_rates!
+# …and R10's belief DYNAMICS for the same reason: `decayed_confidence`/`stale_beliefs`/`revalidate_belief!`
+# were Julia transcriptions of the decay law, a staleness threshold and `Truth_w2c`. They now evaluate
+# `Core/lib/pln/decay.metta` + `WorldModel/lib/ambient_policy.metta`. `Beliefs` keeps only the substrate
+# (append + latest-wins resolution) — it is included before PLNCore, so it cannot reach the library, which
+# is exactly why the formulas got written out there in the first place.
+using .PLNCore: truth_deduction, select_action, refresh_base_rates!,
+    decayed_confidence, stale_beliefs, revalidate_belief!, ambient_revalidate!
 using .SubRep
 using .SubRepCore
 using .Mining
@@ -106,7 +112,7 @@ export add_correspondence!,
     correspondence, transfer, bd_residual, admit_transfer!, transfers
 # Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
-# Beliefs — truth values + staleness on the symbolic core (R10)
-export assert_belief!, beliefs, decayed_confidence, stale_beliefs
+# Beliefs — truth values on the symbolic core; staleness/decay/re-validation (R10) via PLNCore→MeTTa
+export assert_belief!, beliefs, decayed_confidence, stale_beliefs, revalidate_belief!, ambient_revalidate!
 
 end # module WorldModel

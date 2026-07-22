@@ -1,6 +1,7 @@
 using WorldModel
 using Test
 using Random: MersenneTwister
+using MeTTaCore          # to REWRITE a policy atom mid-test and prove it is live, not a Julia default
 
 @testset "WorldModel infra spine — real MORK/PathMap substrate" begin
     store = mktempdir()                              # ephemeral store for the test
@@ -66,10 +67,36 @@ using Random: MersenneTwister
         assert_belief!(reg, "Trigger_u1", 0.5, 0.3, 0.0)
         @test ("Conductor_u1", 0.6, 0.4, 0.0) in beliefs(reg)
         @test decayed_confidence(0.4, 0.0, 10.0; lambda=0.1) ≈ 0.4 * exp(-1.0)
+        # …and with no explicit lambda it uses the library's own `(BeliefDecayRate)` atom
+        @test decayed_confidence(0.4, 0.0, 10.0) ≈ 0.4 * exp(-1.0)
         # fresh just after assertion — nothing stale; much later — both decay below threshold (re-validate)
-        @test isempty(stale_beliefs(reg, 1.0; threshold=0.2, lambda=0.1))
-        st = stale_beliefs(reg, 25.0; threshold=0.2, lambda=0.1)
+        @test isempty(stale_beliefs(reg, 0.0))
+        st = stale_beliefs(reg, 25.0)
         @test "Conductor_u1" in st && "Trigger_u1" in st
+        # MOST URGENT FIRST: Trigger (c₀=0.3) has decayed further below the threshold than Conductor
+        # (c₀=0.4), so it must be ordered ahead of it. The previous implementation returned a KEY-SORTED
+        # list, which put "Conductor_u1" first for reasons having nothing to do with urgency — and since
+        # the ambient loop spent its budget with `Iterators.take`, alphabetical order WAS the agent's
+        # attention-allocation policy.
+        @test st[1] == "Trigger_u1"
+
+        # THE THRESHOLD IS AN ATOM, not a Julia default. REWRITE it and behaviour follows — which is the
+        # whole claim, and it is unfalsifiable if never exercised.
+        # NOTE it must be REMOVED, not just re-added: `=` rules ACCUMULATE, so adding a second
+        # `(= (stale-threshold) 0.0)` leaves both live and every rule reading it forks nondeterministically
+        # (observed: each stale key reported twice, at two different priorities).
+        sp = WorldModel.PLNCore._space()
+        ev(e) = MeTTaCore.Interpreter.load_metta!(sp, e)
+        try
+            ev("!(remove-atom &self (= (stale-threshold) 0.3))")
+            ev("!(add-atom &self (= (stale-threshold) 0.0))")     # nothing can decay below 0 ⇒ never stale
+            @test WorldModel.PLNCore.stale_threshold() == 0.0
+            @test isempty(stale_beliefs(reg, 25.0))
+        finally
+            WorldModel.PLNCore._SPACE[] = nothing        # drop the mutated space; next call rebuilds it
+        end
+        @test WorldModel.PLNCore.stale_threshold() == 0.3                        # restored from the file
+        @test "Conductor_u1" in stale_beliefs(reg, 25.0)                         # …and staleness is back
     end
 
     @testset "R10 re-validation closes the ambient loop (slow_step! consumes `stale`)" begin
@@ -86,10 +113,12 @@ using Random: MersenneTwister
         assert_belief!(r2, "orphan", 0.8, 0.9, 0.0)
 
         t = 40.0                                        # far enough out that BOTH decay below threshold
-        before = stale_beliefs(r2, t; threshold = 0.3, lambda = 0.1)
+        before = stale_beliefs(r2, t)
         @test "supported" in before && "orphan" in before
+        # `orphan` is UNRESCUABLE but still REPORTED: detection and spending are separate concerns, and
+        # "this belief decayed and nothing can rescue it" is a fact the caller wants.
 
-        res = slow_step!(CognitiveLoop(r2); t = t, threshold = 0.3, lambda = 0.1)
+        res = slow_step!(CognitiveLoop(r2); t = t)
         @test "supported" in res.revalidated            # evidence survives ⇒ refreshed…
         @test !("orphan" in res.revalidated)            # …no evidence ⇒ left to decay, NOT propped up
 
@@ -102,10 +131,25 @@ using Random: MersenneTwister
         @test isapprox(ss["supported"], 0.8; atol = 1e-9)
 
         # and the loop actually CLOSES: the refreshed key is no longer stale at the same `t`
-        after = stale_beliefs(r2, t; threshold = 0.3, lambda = 0.1)
+        after = stale_beliefs(r2, t)
         @test !("supported" in after)
         @test "orphan" in after
         @test length(after) < length(before)            # `stale` SHRINKS (was: unchanged forever)
+
+        # STARVATION: an unrescuable key must not consume a budget slot. With budget = 1 and `orphan`
+        # ordered FIRST (it decayed from the same c₀ and was never refreshed, so it is the more urgent
+        # of the two), the anchored key must STILL be reached. Under the old loop — `take(stale, 1)`
+        # over a key-sorted list — "orphan" alone filled the budget on every pass, forever.
+        r3 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r3)
+        c3 = store_evidence!(r3, "still-here"; modality = "vision")
+        ground!(r3, "zzz_anchored", "(entity zzz_anchored tree)", c3)
+        for key in ("aaa_orphan1", "aaa_orphan2", "zzz_anchored")
+            assert_belief!(r3, key, 0.8, 0.9, 0.0)
+        end
+        amb = WorldModel.ambient_revalidate!(r3, t; budget = 1)
+        @test amb.revalidated == ["zzz_anchored"]       # the one rescuable key, despite sorting last
+        @test length(amb.stale) == 3                    # …while all three are still REPORTED as stale
+        @test amb.examined == 3                         # and the pass says how far it had to walk
     end
 
     @testset "node base rates make 2-hop PLN fire END-TO-END (production write path)" begin
@@ -225,10 +269,19 @@ using Random: MersenneTwister
         # and it EVOLVES in the substrate: a second tick under a different stimulus moves the state
         before = copy(ms)
         gv2 = merge(gv, (mods = r.governance.mods, stimulus = [0.1, 0.2, 0.9, 0.8]))  # low novelty, high risk
-        mid_step!(l6, Observation("f2", "vision", "u2", "(entity u2 log)", :e2,
+        r2 = mid_step!(l6, Observation("f2", "vision", "u2", "(entity u2 log)", :e2,
             Dict(:item => (:thing, :log))); governor = gv2)
         after = motives(r6)
         @test any(name -> !isapprox(before[name], after[name]; atol = 1e-9), keys(before))
+        # …and what we read back is THIS TICK'S appraisal, not merely *a* different one. The `any(…)`
+        # above is satisfied by any change at all, so it could not see that the read side was resolving
+        # duplicate rows by MORK trie byte order rather than by time — it would still have passed while
+        # `motives` returned an arbitrary historical row. Pin every modulator to the value the governor
+        # just produced (through set_motive!'s safe-region projection, which is the only transform
+        # applied on the way in).
+        for (i, name) in enumerate(("valence", "arousal", "approach", "resolution", "threshold", "securing"))
+            @test isapprox(after[name], clamp(r2.governance.mods[i], 0.0, 1.0); atol = 1e-9)
+        end
     end
 
     @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
@@ -315,7 +368,7 @@ using Random: MersenneTwister
 
         # SLOW (ambient): stale-belief re-validation (R10) + HMH consolidation (schema formation)
         assert_belief!(reg2, "Conductor_u9", 0.6, 0.3, 0.0)
-        s = slow_step!(loop; t=30.0, threshold=0.2, lambda=0.1)
+        s = slow_step!(loop; t=30.0)   # threshold/lambda are MeTTa atoms now, not kwargs
         @test "Conductor_u9" in s.stale && s.consolidated == :template
 
         # one full multi-rate cycle advances the tick and runs all three rates
@@ -387,15 +440,28 @@ using Random: MersenneTwister
     @testset "MetaMo motive governor over Smotive — appraise/damp/decide (§A.9)" begin
         reg6 = SpaceRegistry(manifest(; store=mktempdir()))
         seed_world_model!(reg6)
-        set_motive!(reg6, "explore", 0.3)
-        set_motive!(reg6, "survive", 0.5)
+        set_motive!(reg6, "explore", 0.3, 0.0)
+        set_motive!(reg6, "survive", 0.5, 0.0)
         @test dominant_motive(reg6)[1] == "survive"            # 0.5 > 0.3
         # govern: a strong explore stimulus, HOMEOSTATICALLY DAMPED to ±max_drift, raises it past survive
-        dom = govern!(reg6, Dict("explore" => 0.9); max_drift=0.3)   # 0.3 + clamp(0.9,±0.3) = 0.6
+        dom = govern!(reg6, Dict("explore" => 0.9), 1.0; max_drift=0.3)   # 0.3 + clamp(0.9,±0.3) = 0.6
         @test dom[1] == "explore" && isapprox(dom[2], 0.6; atol=1e-9)
         # safe projection: urgency stays in [0,1] under a huge stimulus
-        govern!(reg6, Dict("explore" => 5.0); max_drift=10.0)
+        govern!(reg6, Dict("explore" => 5.0), 2.0; max_drift=10.0)
         @test motives(reg6)["explore"] <= 1.0
+
+        # ORDERING IS BY `t`, NOT BY TRIE LAYOUT. Write a LOWER urgency at a LATER time: the read side
+        # must return the later one. MEASURED on this substrate, three writes of the same motive came
+        # back in the order 1.0, 0.05, 0.95 — not insertion order — so the old "later atoms overwrite"
+        # resolution returned 0.95, a value that had already been superseded twice. The enumeration is a
+        # zipper walk over the MORK trie and is a function of the atoms' bytes, not of when they arrived;
+        # which particular stale row wins is not the point, that ANY of them can is.
+        set_motive!(reg6, "explore", 0.05, 99.0)
+        @test isapprox(motives(reg6)["explore"], 0.05; atol=1e-9)
+        @test dominant_motive(reg6)[1] == "survive"            # …and the decision follows the fresh value
+        # a STALER write must NOT win, however it happens to sort
+        set_motive!(reg6, "explore", 0.95, 3.0)
+        @test isapprox(motives(reg6)["explore"], 0.05; atol=1e-9)
     end
 
     @testset "MOSES evolutionary program synthesis over Sprog (§A.12)" begin

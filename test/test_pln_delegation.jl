@@ -82,7 +82,26 @@ end
 
     # (b) …and lib/pln agrees: an undeclared node STV evaluates to NO result, not a zero STV.
     #     This is the bisimulation the sweep above was missing.
-    @test PLNCore._eval_stv("(STV never-declared-node)") === nothing
+    #
+    #     ASSERT ON THE RAW EVALUATION, not on `_eval_stv`. `_eval_stv` returns `nothing` for TWO
+    #     different reasons — `isempty(res)` (the library really produced no result) and a regex miss on
+    #     the `(stv s c)` shape (the term came back UNREDUCED). Those are opposite facts, and the
+    #     collapsed form could not tell them apart: commenting out `(= (STV $stv) (empty))` in
+    #     pln_core_logic.metta makes the head reduce to ITSELF, which is a regex miss, which is
+    #     `nothing`, which passed. The assertion billed as "the bisimulation the sweep was missing"
+    #     therefore observed lib/pln not at all. Caught by a reflective audit, not by the suite.
+    _sp = PLNCore._space()
+    # PLNCore's OWN `metta_run`/`parse_program` (and its cached lib/pln space) — the identical entry
+    # `_eval_stv` uses one line further down, so this observes the production path, not a lookalike.
+    _run(e) = PLNCore.metta_run(PLNCore.parse_program(e)[1][2], _sp)
+    @test isempty(_run("(STV never-declared-node)"))          # the library genuinely yields NOTHING
+    #     POSITIVE CONTROL: the marshaller's non-`nothing` branch must be reachable on the same path,
+    #     otherwise "always nothing" would satisfy the check above for the wrong reason.
+    @test PLNCore._eval_stv("(Truth_w2c 3)") === nothing      # a Number is not an (stv s c) — shape-checked
+    @test PLNCore._eval_stv(
+        "(Truth_Deduction (stv 0.8 0.9) (stv 0.7 0.85) (stv 0.6 0.8) (stv 0.7 0.9) (stv 0.6 0.85))"
+    ) !== nothing                                             # …and a real formula result DOES marshal
+    @test PLNCore._eval_stv("(STV never-declared-node)") === nothing   # the original claim, now backed
 
     # (c) PRODUCTION SHAPE: a 2-hop chain with NO node STVs (exactly what assert_implication! leaves —
     #     it writes only `a=>b` keys). The transitive candidate must VANISH, not appear at a flat 0.0.

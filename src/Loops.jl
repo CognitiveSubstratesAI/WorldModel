@@ -13,10 +13,13 @@ module Loops
 using ..Registry: SpaceRegistry, add!, dense_store, hmh_index, has_space
 using ..Braid:
     store_evidence!, ground!, encode_hmh!, lift!, kernel_summary!, predict_dynamics
-using ..Beliefs: stale_beliefs, revalidate_belief!
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
-using ..PLNCore: select_action, refresh_base_rates!   # canonical: both delegate to Core lib/pln MeTTa
+# canonical — all of these delegate to MeTTa (Core lib/pln + WorldModel/lib/ambient_policy.metta).
+# `ambient_revalidate!` replaces the Julia `stale_beliefs`/`revalidate_belief!` pair that used to come
+# from `..Beliefs`; the thresholds and budgets below are now MeTTa atoms rather than kwarg defaults.
+using ..PLNCore: select_action, refresh_base_rates!, ambient_revalidate!
+import ..PLNCore    # for the policy-atom readers, qualified: `base_rate_limit` collides with the kwarg
 using ..MetaMoCore: govern              # canonical MetaMo goal governance (delegates to lib/metamo)
 using ..MetaMo: set_motive!             # …and its space-backed motive STATE (Smotive), persisted below
 using ..Mining: mine!
@@ -74,11 +77,11 @@ const _MODULATOR_NAMES = ("valence", "arousal", "approach", "resolution", "thres
 # Write the appraised modulator vector into Smotive as `(motive <name> <urgency>)` — MetaMo's own schema,
 # so `motives`/`dominant_motive`/`govern!` read it back unchanged. `set_motive!` clamps to the safe region
 # [0,1] and appends (latest-wins), matching how beliefs are resolved.
-function _persist_modulators!(reg::SpaceRegistry, mods)
+function _persist_modulators!(reg::SpaceRegistry, mods, t::Real)
     m = collect(Float64, mods)
     for (i, name) in enumerate(_MODULATOR_NAMES)
         i <= length(m) || break
-        set_motive!(reg, name, m[i])
+        set_motive!(reg, name, m[i], t)
     end
     return nothing
 end
@@ -115,7 +118,9 @@ function mid_step!(
     # outside the metagraph: not inspectable, not matchable, not evolvable by MOSES/GEO-EVO, not
     # .act-persisted — the same defect as Senv/`d.outcomes`, at the top of the cognitive stack.
     # Names are the CANONICAL ones (Core/lib/metamo/config.metta:19-24 `ModulatorIndex`), not invented.
-    governance === nothing || _persist_modulators!(reg, governance.mods)
+    # …stamped with the tick, so `motives` can resolve successive appraisals by TIME. Without the stamp
+    # the read side fell back to MORK trie byte order and could return an older tick's affect as current.
+    governance === nothing || _persist_modulators!(reg, governance.mods, float(loop.tick))
     acts = goal === nothing ? [] : select_action(reg, goal)    # PLN action-selection over Srule
     # RECORD WHAT THE AGENT DID, in the metagraph. Senv is the schema's "environment interface —
     # observations / actions" and was declared-but-never-written: the chosen action was returned in a
@@ -154,34 +159,47 @@ Advances the tick.
 REFRESHED from surviving evidence this step (≤ `revalidate`, the ambient budget). A stale key with no
 evidence left is deliberately absent from `revalidated` — it keeps decaying rather than being propped up.
 """
-function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::Real=0.1,
+function slow_step!(loop::CognitiveLoop; t::Real,
     template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
-    revalidate::Int=16, base_rate_limit::Int=64, synthesis=nothing)
+    revalidate::Union{Int,Nothing}=nothing, base_rate_limit::Union{Int,Nothing}=nothing,
+    synthesis=nothing)
     reg = loop.reg
-    stale = stale_beliefs(reg, t; threshold=threshold, lambda=lambda)
     # R10 CLOSES THE LOOP: re-validate the decayed beliefs instead of only reporting them. Until now
     # `stale` was computed and returned and NOTHING consumed it (the only reference to `.stale` in the
     # whole codebase was the return below), so §7's "factor-graph PLN tightens beliefs" was
-    # detection-only. Budgeted (`revalidate`) because this is ambient background work, not a barrier:
-    # each key costs an evidence lookup, and a symbol with no surviving evidence is deliberately left
-    # to keep decaying (revalidate_belief! returns nothing) rather than propped up.
-    revalidated = String[]
-    for key in Iterators.take(stale, max(revalidate, 0))
-        revalidate_belief!(reg, key, t; into=:Srule) === nothing || push!(revalidated, key)
-    end
+    # detection-only.
+    #
+    # WHAT IS STALE, HOW URGENT IT IS, AND HOW MUCH WORK ONE PASS MAY DO ARE NOW ATOMS
+    # (`WorldModel/lib/ambient_policy.metta`: stale-threshold / staleness-priority / revalidate-budget).
+    # They were Julia keyword DEFAULTS here — and defaults, not arguments: `run_cycle!` calls
+    # `slow_step!(loop; t=t)` and OmegaClaw's `_ambient_step!` passes only `t`, so those numbers WERE the
+    # live policy while being invisible to the agent. (`threshold` also disagreed with the 0.5 that
+    # `Beliefs.stale_beliefs` used for the same concept.) The kwargs survive as OVERRIDES for tests and
+    # for callers that genuinely want a different budget; `nothing` means "ask the policy".
+    #
+    # Two behavioural fixes come with it. Candidates are now ordered by HOW FAR each has decayed below
+    # the threshold, not alphabetically — the previous `Iterators.take(stale, 16)` ran over a key-sorted
+    # list, making alphabetical order an accidental attention-allocation policy. And the budget counts
+    # SUCCESSFUL refreshes: a key whose evidence has all disappeared can never be refreshed, so under the
+    # old loop it stayed a candidate forever and consumed a slot on every future pass — sixteen such keys
+    # sorting early and no later belief would ever be re-validated again.
+    amb = ambient_revalidate!(reg, t; into=:Srule,
+        budget = revalidate === nothing ? PLNCore.revalidate_budget() : revalidate)
+    stale, revalidated = amb.stale, amb.revalidated
+    brlimit = base_rate_limit === nothing ? PLNCore.base_rate_limit() : base_rate_limit
     # Node BASE RATES (§7 "tighten"): recompute the extensional prior of every perceived concept so
     # PLN's 2-hop transitive branch has endpoints to reason over. Nothing in production wrote a node STV
     # before, which is why that branch never contributed. Ambient, budgeted, and absent-by-default —
     # a concept with no extension gets no belief rather than a fabricated zero.
     base_rates = refresh_base_rates!(reg, t; into=mine_from, head="entity",
-                                     into_rule=:Srule, limit=base_rate_limit)
+                                     into_rule=:Srule, limit=brlimit)
     # …and the AGENT'S OWN universes, recorded by mid_step! into Senv: what it did and what it pursued.
     # Perceived types get a prior from Sent; action/goal symbols have no extension there, so without
     # these they stay absent and every 2-hop candidate over the ACTION graph is skipped.
     append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="action",
-                                            into_rule=:Srule, limit=base_rate_limit))
+                                            into_rule=:Srule, limit=brlimit))
     append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="goal",
-                                            into_rule=:Srule, limit=base_rate_limit))
+                                            into_rule=:Srule, limit=brlimit))
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
@@ -194,7 +212,7 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
                 gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
                 subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))
     loop.tick += 1
-    return (; stale=stale, revalidated=revalidated, base_rates=base_rates,
+    return (; stale=stale, revalidated=revalidated, examined=amb.examined, base_rates=base_rates,
         consolidated=consolidated, mined=mined, admitted=admitted, synthesized=synthesized)
 end
 
