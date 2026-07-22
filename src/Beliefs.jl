@@ -24,9 +24,30 @@ function assert_belief!(reg::SpaceRegistry, key::AbstractString, s::Real, c::Rea
     return nothing
 end
 
-"All beliefs in space `into` as `(key, s, c, t)` tuples."
+"""
+    beliefs(reg; into=:Srule) -> Vector{Tuple{String,Float64,Float64,Float64}}
+
+The CURRENT belief per key in space `into`, as `(key, s, c, t)` tuples, sorted by key.
+
+**Latest-wins resolution.** The substrate is append-only — `assert_belief!` `add!`s a new
+`(belief key s c t)` atom and `Registry` has no remove — so re-asserting a key (which
+`reinforce!` does on EVERY outcome) leaves every prior version in the space. Returning them all
+made re-assertion a no-op for every consumer: `node_stv`/`impl_stv` returned whichever version the
+trie yielded first, `PLNCore.select_action` bumps with `max` so an action kept its BEST-EVER score,
+and `stale_beliefs` flagged superseded versions as stale. Measured before this fix: 1 success then
+4 failures drove strength 1.0 → 0.2 while the selection score never moved off its first value —
+i.e. `reinforce!`'s documented demotion could not happen and the reward channel was write-only.
+
+So a later assertion SUPERSEDES an earlier one for the same key: keep max `t`, tie-broken by higher
+`c` (within one tick the assertion carrying more evidence wins) — deterministic, and independent of
+trie iteration order. All four consumers (`node_stv`, `PLN.select_action`, `PLNCore.select_action`,
+`stale_beliefs`) want exactly this; none needs the history. Superseded atoms still occupy the space
+— bounding that needs a write-side replace via `MORK.space_remove_sexpr!`, which `Registry` does not
+yet expose (follow-up); reading is correct regardless, including for duplicates already persisted
+in `.act` state.
+"""
 function beliefs(reg::SpaceRegistry; into::Symbol=:Srule)
-    out = Tuple{String, Float64, Float64, Float64}[]
+    latest = Dict{String, Tuple{Float64, Float64, Float64}}()   # key => (s, c, t)
     for a in query_head(reg, into, "belief")
         toks = split(strip(a)[2:(end - 1)])               # ["belief", key, s, c, t]
         length(toks) == 5 || continue
@@ -34,9 +55,12 @@ function beliefs(reg::SpaceRegistry; into::Symbol=:Srule)
         c = tryparse(Float64, toks[4]);
         t = tryparse(Float64, toks[5])
         (s === nothing || c === nothing || t === nothing) && continue
-        push!(out, (String(toks[2]), s, c, t))
+        key = String(toks[2])
+        prev = get(latest, key, nothing)
+        (prev === nothing || (t, c) > (prev[3], prev[2])) && (latest[key] = (s, c, t))
     end
-    return out
+    return Tuple{String, Float64, Float64, Float64}[
+        (k, v[1], v[2], v[3]) for (k, v) in sort!(collect(latest); by = first)]
 end
 
 """
