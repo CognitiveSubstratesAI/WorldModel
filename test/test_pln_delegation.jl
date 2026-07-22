@@ -64,3 +64,43 @@ end
     @test rr.action !== nothing && rr.action[1] in core
     @info "PLN live-path: canonical multi-hop finds transitive `build` the 1-hop scan misses; mid_step! uses it"
 end
+
+@testset "PLN absence semantics — the Julia layer must not contradict lib/pln" begin
+    # THE COVERAGE GAP THAT LET A REAL BUG THROUGH. The bisimulation sweep above always feeds CONCRETE
+    # STVs (`rstv()`), and the 2-hop testset HAND-ASSERTS node beliefs so the preconditions pass — so
+    # nothing ever exercised ABSENCE. Both testsets stayed green while the production path was dead:
+    # lib/pln declares `(= (STV $stv) (empty))` (pln_core_logic.metta:208) ⇒ an undeclared node yields NO
+    # RESULT, but the Julia `node_stv` fabricated `(0.0, 0.0)`. `_consistent` requires `as > 0`, so that
+    # fabricated zero always failed the precondition, took the `(stv 1 0)` fallback, and every transitive
+    # candidate scored `1.0 * 0.0 = 0.0` — inserted, tied, and meaningless. Nothing in production asserts
+    # node STVs, so the *feature* was inert while the *tests* proved the mechanism.
+    reg = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(reg)
+
+    # (a) the Julia layer reports absence AS absence — never a fabricated zero truth value
+    @test WorldModel.node_stv(reg, "never-asserted") === nothing
+    @test WorldModel.impl_stv(reg, "no-a", "no-b") === nothing
+
+    # (b) …and lib/pln agrees: an undeclared node STV evaluates to NO result, not a zero STV.
+    #     This is the bisimulation the sweep above was missing.
+    @test PLNCore._eval_stv("(STV never-declared-node)") === nothing
+
+    # (c) PRODUCTION SHAPE: a 2-hop chain with NO node STVs (exactly what assert_implication! leaves —
+    #     it writes only `a=>b` keys). The transitive candidate must VANISH, not appear at a flat 0.0.
+    reg2 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(reg2)
+    assert_implication!(reg2, "A", "B", 0.9, 0.9, 0.0)
+    assert_implication!(reg2, "B", "goal", 0.9, 0.9, 0.0)
+    sc = WorldModel.PLNCore.select_action(reg2, "goal")
+    ids = [a[1] for a in sc]
+    @test "B" in ids                                  # the 1-hop candidate still ranks
+    @test !("A" in ids)                               # the transitive one is SKIPPED (was: inserted at 0.0)
+    @test all(v -> v > 0.0, [a[2] for a in sc])       # no candidate may carry a meaningless zero score
+
+    # (d) give the nodes base rates and the SAME chain now yields real discrimination — proving the skip
+    #     removed noise rather than capability. (Hand-checked: s = 0.81 + 0.1·(0.7−0.54)/0.4 = 0.85,
+    #     c = 0.9⁴ = 0.6561, s·c ≈ 0.5577.)
+    for (n, s) in (("A", 0.5), ("B", 0.6), ("goal", 0.7)); assert_belief!(reg2, n, s, 0.9, 0.0); end
+    sc2 = WorldModel.PLNCore.select_action(reg2, "goal")
+    @test "A" in [a[1] for a in sc2]                  # transitive candidate is back…
+    @test all(v -> v > 0.0, [a[2] for a in sc2])      # …and every score is meaningful
+    @info "PLN absence: undeclared node ⇒ nothing (Julia) ≡ no result (lib/pln); 2-hop skips vs scores $(round(maximum([a[2] for a in sc2]); digits=4))"
+end
