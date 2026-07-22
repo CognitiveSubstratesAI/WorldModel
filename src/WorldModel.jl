@@ -49,8 +49,17 @@ using .Registry
 using .Schema
 using .Braid
 using .Beliefs
-using .PLN
-using .PLNCore
+# PLN — the public `truth_deduction`/`select_action` are PLNCore's CANONICAL ones: they delegate to Core
+# `lib/pln` MeTTa and are what `mid_step!` actually runs (Loops.jl:20). This module used to re-export
+# PLN.jl's Julia twins instead, so `using WorldModel; select_action(…)` gave a 1-hop-only answer while the
+# system itself computed 1-hop + 2-hop — the public API disagreeing with the live path, the same class of
+# defect as `node_stv` fabricating (0,0). Upstream settles the shape: CeTTa and PeTTa implement PLN ONLY in
+# MeTTa (no PLN symbols in CeTTa's C sources; none in PeTTa's src) — the host language is SUBSTRATE, never
+# a second copy of a reasoning formula. PLN.jl's twins stay reachable as `WorldModel.PLN.*`: they are the
+# BISIMULATION ORACLE that gates swapping (agreement is the safety property), not the public interface.
+# NOTE the return shapes differ: PLNCore.select_action yields (id, score::Float64); PLN's yields (id, STV).
+using .PLN: STV, node_stv, impl_stv, assert_implication!, deduce, base_rate, refresh_base_rates!
+using .PLNCore: truth_deduction, select_action
 using .SubRep
 using .SubRepCore
 using .Mining
