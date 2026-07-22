@@ -8,10 +8,11 @@
 
 module PLN
 
-using ..Registry: SpaceRegistry, add!
+using ..Registry: SpaceRegistry, add!, query_head
 using ..Beliefs: beliefs, assert_belief!
 
 export STV, truth_deduction, node_stv, impl_stv, assert_implication!, deduce, select_action
+export base_rate, refresh_base_rates!
 
 "A PLN simple truth value: strength `s` ∈ [0,1] and confidence `c` ∈ [0,1)."
 const STV = NamedTuple{(:s, :c), Tuple{Float64, Float64}}
@@ -102,6 +103,81 @@ function deduce(
     PQ = impl_stv(reg, a, b; into); QR = impl_stv(reg, b, c; into)
     any(x -> x === nothing, (P, Q, R, PQ, QR)) && return nothing
     return truth_deduction(P, Q, R, PQ, QR)
+end
+
+# ── node base rates: the EXTENSIONAL prior a node STV actually denotes ─────────────────────────────
+# A PLN node's strength is its BASE RATE — P(C), the chance a random element of the universe is in C —
+# not "how true C is". We can compute it directly, because grounding already records an instance
+# relation: `ground!` writes `(entity KEY TYPE)` into Sent (Braid.jl:47-53), live on every perception
+# (OmegaClaw `_perceive` emits `(entity e<tick> <token>)`). So
+#     s(T) = |{k : (entity k T)}| / |{k : (entity k _)}|
+# is the textbook extensional base rate over data we already produce — no invented semantics.
+#
+# Confidence comes from the INSTANCE COUNT through our canonical map `Truth_w2c(n) = n/(n+1)` (k = 1,
+# lib/pln pln_core_logic.metta:216), so it lands on the same evidence scale as every other TV.
+# PeTTaChainer's k=800 is deliberately NOT used (docs/specs/pln_node_base_rate_spec.md §2b).
+#
+# ⚠️ Scope: this covers PERCEPTUAL concepts (types that have an extension in Sent). Action/goal symbols
+# live in Srule and have no extension, so they get NO base rate here — `node_stv` reports absence and
+# callers skip, which is the correct behaviour rather than a fabricated prior. Giving those symbols a
+# base rate needs a different notion (episode frequency over Shmh) and is a separate decision (spec §6).
+
+"Parse `(entity KEY TYPE)` → `TYPE`, or `nothing` for any other shape (incl. the 1-arg `(entity k)`)."
+function _entity_type(a::AbstractString)
+    toks = split(strip(a)[2:(end - 1)])
+    (length(toks) == 3 && toks[1] == "entity") ? String(toks[3]) : nothing
+end
+
+"""
+    base_rate(reg, concept; into=:Sent) -> Union{STV,Nothing}
+
+The extensional base rate of `concept`: strength `|ext(concept)| / |universe|` over the `(entity k T)`
+instance atoms in `into`, confidence `n/(n+1)` from the instance count (canonical `Truth_w2c`, k=1).
+
+Returns `nothing` — NOT `(0,0)` — when the concept has no instances or the universe is empty. Absence
+is not a truth value: a concept we have never seen an instance of is *unknown*, not *known to be rare*,
+and fabricating a 0 strength is exactly what made 2-hop deduction dead (see `node_stv`).
+"""
+function base_rate(reg::SpaceRegistry, concept::AbstractString; into::Symbol=:Sent)
+    universe = 0; ext = 0
+    for a in query_head(reg, into, "entity")
+        ty = _entity_type(a)
+        ty === nothing && continue
+        universe += 1
+        ty == concept && (ext += 1)
+    end
+    (universe == 0 || ext == 0) && return nothing
+    return (s = ext / universe, c = ext / (ext + 1))::STV
+end
+
+"""
+    refresh_base_rates!(reg, t; into=:Sent, into_rule=:Srule, limit=64) -> Vector{String}
+
+Recompute the extensional base rate of every concept with an extension in `into` and assert it as that
+node's belief in `into_rule`, so `node_stv` resolves it (beliefs are latest-wins, so this supersedes an
+earlier snapshot rather than accumulating). Returns the concepts refreshed.
+
+This is what turns `PLNCore.select_action`'s 2-hop transitive branch from structurally-live into
+actually-firing: it needs node STVs for its endpoints, and before this nothing in production ever wrote
+one. Budgeted by `limit` — it is ambient background work.
+"""
+function refresh_base_rates!(reg::SpaceRegistry, t::Real;
+    into::Symbol=:Sent, into_rule::Symbol=:Srule, limit::Int=64)
+    counts = Dict{String, Int}(); universe = 0
+    for a in query_head(reg, into, "entity")
+        ty = _entity_type(a)
+        ty === nothing && continue
+        universe += 1
+        counts[ty] = get(counts, ty, 0) + 1
+    end
+    universe == 0 && return String[]
+    out = String[]
+    for ty in Iterators.take(sort!(collect(keys(counts))), max(limit, 0))   # sorted ⇒ deterministic
+        n = counts[ty]
+        assert_belief!(reg, ty, n / universe, n / (n + 1), t; into=into_rule)
+        push!(out, ty)
+    end
+    return out
 end
 
 """

@@ -14,6 +14,7 @@ using ..Registry: SpaceRegistry, dense_store, hmh_index, has_space
 using ..Braid:
     store_evidence!, ground!, encode_hmh!, lift!, kernel_summary!, predict_dynamics
 using ..Beliefs: stale_beliefs, revalidate_belief!
+using ..PLN: refresh_base_rates!
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
@@ -119,7 +120,7 @@ evidence left is deliberately absent from `revalidated` — it keeps decaying ra
 """
 function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::Real=0.1,
     template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
-    revalidate::Int=16, synthesis=nothing)
+    revalidate::Int=16, base_rate_limit::Int=64, synthesis=nothing)
     reg = loop.reg
     stale = stale_beliefs(reg, t; threshold=threshold, lambda=lambda)
     # R10 CLOSES THE LOOP: re-validate the decayed beliefs instead of only reporting them. Until now
@@ -132,6 +133,11 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
     for key in Iterators.take(stale, max(revalidate, 0))
         revalidate_belief!(reg, key, t; into=:Srule) === nothing || push!(revalidated, key)
     end
+    # Node BASE RATES (§7 "tighten"): recompute the extensional prior of every perceived concept so
+    # PLN's 2-hop transitive branch has endpoints to reason over. Nothing in production wrote a node STV
+    # before, which is why that branch never contributed. Ambient, budgeted, and absent-by-default —
+    # a concept with no extension gets no belief rather than a fabricated zero.
+    base_rates = refresh_base_rates!(reg, t; into=mine_from, into_rule=:Srule, limit=base_rate_limit)
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
@@ -144,8 +150,8 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
                 gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
                 subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))
     loop.tick += 1
-    return (; stale=stale, revalidated=revalidated, consolidated=consolidated, mined=mined,
-        admitted=admitted, synthesized=synthesized)
+    return (; stale=stale, revalidated=revalidated, base_rates=base_rates,
+        consolidated=consolidated, mined=mined, admitted=admitted, synthesized=synthesized)
 end
 
 """

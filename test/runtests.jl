@@ -108,6 +108,59 @@ using Random: MersenneTwister
         @test length(after) < length(before)            # `stale` SHRINKS (was: unchanged forever)
     end
 
+    @testset "node base rates make 2-hop PLN fire END-TO-END (production write path)" begin
+        # The 2-hop transitive branch needs node STVs for its endpoints, and NOTHING in production ever
+        # wrote one — so it contributed exactly 0.0 to every candidate. This drives the REAL path:
+        # ground!(entity …) as mid_step! does → slow_step! computes extensional base rates → deduction
+        # has premises. Deliberately NOT hand-asserting node beliefs: doing that is what let the earlier
+        # 2-hop test pass over a dead mechanism.
+        r3 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r3)
+        for (i, ty) in enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
+            cid = store_evidence!(r3, "obs$i"; modality = "vision")
+            ground!(r3, "e$i", "(entity e$i $ty)", cid)
+        end
+        # tree ⇒ shade ⇒ comfort  (all three are PERCEIVED concepts, so all three get base rates).
+        # Strengths must be CONSISTENT with those base rates: P(shade|tree) ≤ P(shade)/P(tree) = 2/3,
+        # and P(comfort|shade) ≤ P(comfort)/P(shade) = 1/2. (The inconsistent case is asserted below —
+        # being able to tell the difference is exactly what having base rates buys.)
+        assert_implication!(r3, "tree", "shade", 0.6, 0.9, 0.0)
+        assert_implication!(r3, "shade", "comfort", 0.45, 0.9, 0.0)
+
+        @test node_stv(r3, "tree") === nothing          # before: no node STV exists at all
+        pre = WorldModel.PLNCore.select_action(r3, "comfort")
+        @test !any(a -> a[1] == "tree", pre)            # ⇒ the 2-hop candidate is (correctly) skipped
+
+        res = slow_step!(CognitiveLoop(r3); t = 1.0)
+        @test "tree" in res.base_rates && "shade" in res.base_rates
+
+        br = node_stv(r3, "tree")
+        @test br !== nothing
+        @test isapprox(br.s, 3 / 7; atol = 1e-9)        # 3 trees out of a 7-entity universe
+        @test isapprox(br.c, 3 / 4; atol = 1e-9)        # canonical Truth_w2c(3) = 3/(3+1), k = 1
+
+        post = WorldModel.PLNCore.select_action(r3, "comfort")
+        tree = findfirst(a -> a[1] == "tree", post)
+        @test tree !== nothing                          # the 2-hop candidate now EXISTS…
+        @test post[tree][2] > 0.0                       # …and carries a real, non-zero score
+        @test any(a -> a[1] == "shade", post)           # 1-hop candidate still present
+
+        # …and the consistency guard is now MEANINGFUL. Same graph, same base rates, but an IMPOSSIBLE
+        # link strength (P(shade|tree)=0.9 > P(shade)/P(tree)=2/3) is rejected by `_consistent`, takes the
+        # (s=1,c=0) fallback and contributes 0.0. Before base rates existed EVERY deduction failed the
+        # guard trivially (as=0), so it discriminated nothing; now it separates possible from impossible.
+        r4 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r4)
+        for (i, ty) in enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
+            cid = store_evidence!(r4, "obs$i"; modality = "vision")
+            ground!(r4, "e$i", "(entity e$i $ty)", cid)
+        end
+        assert_implication!(r4, "tree", "shade", 0.9, 0.9, 0.0)     # impossible given the base rates
+        assert_implication!(r4, "shade", "comfort", 0.45, 0.9, 0.0)
+        slow_step!(CognitiveLoop(r4); t = 1.0)
+        bad = WorldModel.PLNCore.select_action(r4, "comfort")
+        ti = findfirst(a -> a[1] == "tree", bad)
+        @test ti !== nothing && bad[ti][2] == 0.0       # inconsistent ⇒ contributes nothing
+    end
+
     @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
         # two affordance trials encoded as role-filler episodes into Shmh (real FactorVSA hypervectors)
         encode_hmh!(reg, :trial1,
