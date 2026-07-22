@@ -161,6 +161,36 @@ using Random: MersenneTwister
         @test ti !== nothing && bad[ti][2] == 0.0       # inconsistent ⇒ contributes nothing
     end
 
+    @testset "mid_step! records what the agent DID (Senv) ⇒ action/goal symbols get priors" begin
+        # Senv is the schema's "environment interface — observations / actions" and was declared but
+        # NEVER written: the chosen action lived only in a host-side Julia Dict, outside the substrate.
+        # So action/goal symbols had no extension anywhere and could never get a base rate — meaning
+        # 2-hop reasoning over the AGENT'S OWN action graph was structurally impossible, independent of
+        # the perceptual base rates. This drives mid_step! for real and checks both.
+        r5 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r5)
+        assert_implication!(r5, "chop", "wood", 0.5, 0.9, 0.0)      # chop ⇒ wood ⇒ shelter
+        assert_implication!(r5, "wood", "shelter", 0.5, 0.9, 0.0)
+        lp = CognitiveLoop(r5)
+        for i in 1:4
+            obs = Observation("frame$i", "vision", "x$i", "(entity x$i log)", Symbol("ep", i),
+                Dict(:item => (:thing, :log)))
+            mid_step!(lp, obs; goal = "shelter")
+        end
+        env = atoms(r5, :Senv)
+        @test any(a -> startswith(a, "(goal "), env)                # goals pursued are recorded…
+        @test any(a -> startswith(a, "(action "), env)              # …and so is the action chosen
+        @test any(a -> occursin("wood", a), env)                    # `wood` is the 1-hop pick for shelter
+
+        @test node_stv(r5, "wood") === nothing                      # no prior for an ACTION symbol yet
+        res = slow_step!(lp; t = 1.0)
+        @test "wood" in res.base_rates                              # now derived from Senv's action universe
+        bw = node_stv(r5, "wood")
+        @test bw !== nothing && bw.s > 0.0 && bw.c > 0.0
+        # `shelter` was pursued every tick ⇒ it is the whole goal universe ⇒ base rate 1.0
+        bs = node_stv(r5, "shelter")
+        @test bs !== nothing && isapprox(bs.s, 1.0; atol = 1e-9)
+    end
+
     @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
         # two affordance trials encoded as role-filler episodes into Shmh (real FactorVSA hypervectors)
         encode_hmh!(reg, :trial1,

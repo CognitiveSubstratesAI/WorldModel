@@ -122,10 +122,10 @@ end
 # callers skip, which is the correct behaviour rather than a fabricated prior. Giving those symbols a
 # base rate needs a different notion (episode frequency over Shmh) and is a separate decision (spec §6).
 
-"Parse `(entity KEY TYPE)` → `TYPE`, or `nothing` for any other shape (incl. the 1-arg `(entity k)`)."
-function _entity_type(a::AbstractString)
+"Parse `(HEAD KEY CLASS)` → `CLASS`, or `nothing` for any other shape (incl. the 1-arg `(HEAD k)`)."
+function _classified(a::AbstractString, head::AbstractString)
     toks = split(strip(a)[2:(end - 1)])
-    (length(toks) == 3 && toks[1] == "entity") ? String(toks[3]) : nothing
+    (length(toks) == 3 && toks[1] == head) ? String(toks[3]) : nothing
 end
 
 """
@@ -138,10 +138,11 @@ Returns `nothing` — NOT `(0,0)` — when the concept has no instances or the u
 is not a truth value: a concept we have never seen an instance of is *unknown*, not *known to be rare*,
 and fabricating a 0 strength is exactly what made 2-hop deduction dead (see `node_stv`).
 """
-function base_rate(reg::SpaceRegistry, concept::AbstractString; into::Symbol=:Sent)
+function base_rate(reg::SpaceRegistry, concept::AbstractString;
+    into::Symbol=:Sent, head::AbstractString="entity")
     universe = 0; ext = 0
-    for a in query_head(reg, into, "entity")
-        ty = _entity_type(a)
+    for a in query_head(reg, into, head)
+        ty = _classified(a, head)
         ty === nothing && continue
         universe += 1
         ty == concept && (ext += 1)
@@ -162,10 +163,10 @@ actually-firing: it needs node STVs for its endpoints, and before this nothing i
 one. Budgeted by `limit` — it is ambient background work.
 """
 function refresh_base_rates!(reg::SpaceRegistry, t::Real;
-    into::Symbol=:Sent, into_rule::Symbol=:Srule, limit::Int=64)
+    into::Symbol=:Sent, head::AbstractString="entity", into_rule::Symbol=:Srule, limit::Int=64)
     counts = Dict{String, Int}(); universe = 0
-    for a in query_head(reg, into, "entity")
-        ty = _entity_type(a)
+    for a in query_head(reg, into, head)
+        ty = _classified(a, head)
         ty === nothing && continue
         universe += 1
         counts[ty] = get(counts, ty, 0) + 1

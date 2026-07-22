@@ -10,7 +10,7 @@
 
 module Loops
 
-using ..Registry: SpaceRegistry, dense_store, hmh_index, has_space
+using ..Registry: SpaceRegistry, add!, dense_store, hmh_index, has_space
 using ..Braid:
     store_evidence!, ground!, encode_hmh!, lift!, kernel_summary!, predict_dynamics
 using ..Beliefs: stale_beliefs, revalidate_belief!
@@ -91,6 +91,16 @@ function mid_step!(
         govern(governor.goals, governor.mods, governor.stimulus, governor.candidates)
     goal === nothing && governance !== nothing && (goal = governance.chosen)
     acts = goal === nothing ? [] : select_action(reg, goal)    # PLN action-selection over Srule
+    # RECORD WHAT THE AGENT DID, in the metagraph. Senv is the schema's "environment interface —
+    # observations / actions" and was declared-but-never-written: the chosen action was returned in a
+    # NamedTuple and otherwise existed only in OmegaClaw's host-side `d.outcomes` Dict, i.e. outside the
+    # substrate — not inspectable, not evolvable, not persisted in .act with everything else. Same
+    # `(HEAD KEY CLASS)` shape as `ground!`'s `(entity …)`, so the extensional base-rate machinery reads
+    # it unchanged: `(action a<tick> <id>)` over the universe of actions taken, `(goal g<tick> <name>)`
+    # over the goals pursued. This is what gives ACTION/GOAL symbols a prior at all — perceived types
+    # get one from Sent, but these live in Srule and have no extension there.
+    goal === nothing || add!(reg, :Senv, "(goal g$(loop.tick) $goal)")
+    isempty(acts) || add!(reg, :Senv, "(action a$(loop.tick) $(first(acts)[1]))")
     return (;
         cid=cid,
         context=ctx_key,
@@ -137,7 +147,15 @@ function slow_step!(loop::CognitiveLoop; t::Real, threshold::Real=0.3, lambda::R
     # PLN's 2-hop transitive branch has endpoints to reason over. Nothing in production wrote a node STV
     # before, which is why that branch never contributed. Ambient, budgeted, and absent-by-default —
     # a concept with no extension gets no belief rather than a fabricated zero.
-    base_rates = refresh_base_rates!(reg, t; into=mine_from, into_rule=:Srule, limit=base_rate_limit)
+    base_rates = refresh_base_rates!(reg, t; into=mine_from, head="entity",
+                                     into_rule=:Srule, limit=base_rate_limit)
+    # …and the AGENT'S OWN universes, recorded by mid_step! into Senv: what it did and what it pursued.
+    # Perceived types get a prior from Sent; action/goal symbols have no extension there, so without
+    # these they stay absent and every 2-hop candidate over the ACTION graph is skipped.
+    append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="action",
+                                            into_rule=:Srule, limit=base_rate_limit))
+    append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="goal",
+                                            into_rule=:Srule, limit=base_rate_limit))
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
