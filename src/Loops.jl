@@ -14,10 +14,9 @@ using ..Registry: SpaceRegistry, add!, dense_store, hmh_index, has_space
 using ..Braid:
     store_evidence!, ground!, encode_hmh!, lift!, kernel_summary!, predict_dynamics
 using ..Beliefs: stale_beliefs, revalidate_belief!
-using ..PLN: refresh_base_rates!
 using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
-using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
+using ..PLNCore: select_action, refresh_base_rates!   # canonical: both delegate to Core lib/pln MeTTa
 using ..MetaMoCore: govern              # canonical MetaMo goal governance (delegates to lib/metamo)
 using ..MetaMo: set_motive!             # …and its space-backed motive STATE (Smotive), persisted below
 using ..Mining: mine!

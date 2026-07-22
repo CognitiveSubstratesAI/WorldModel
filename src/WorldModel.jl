@@ -58,8 +58,8 @@ using .Beliefs
 # a second copy of a reasoning formula. PLN.jl's twins stay reachable as `WorldModel.PLN.*`: they are the
 # BISIMULATION ORACLE that gates swapping (agreement is the safety property), not the public interface.
 # NOTE the return shapes differ: PLNCore.select_action yields (id, score::Float64); PLN's yields (id, STV).
-using .PLN: STV, node_stv, impl_stv, assert_implication!, deduce, base_rate, refresh_base_rates!
-using .PLNCore: truth_deduction, select_action
+using .PLN: STV, node_stv, impl_stv, assert_implication!, deduce
+using .PLNCore: truth_deduction, select_action, refresh_base_rates!
 using .SubRep
 using .SubRepCore
 using .Mining
