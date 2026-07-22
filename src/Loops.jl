@@ -19,6 +19,7 @@ using ..Dense: has_predictor, get_vec
 using ..HMHStore: consolidate!
 using ..PLNCore: select_action          # canonical multi-hop action-selection (delegates to lib/pln)
 using ..MetaMoCore: govern              # canonical MetaMo goal governance (delegates to lib/metamo)
+using ..MetaMo: set_motive!             # …and its space-backed motive STATE (Smotive), persisted below
 using ..Mining: mine!
 using ..SubRepCore: admit_proposed!     # ambient SubRep option certification (delegates to lib/subrep)
 using ..MOSES: geo_synthesize!, geo_synthesize_geometric!   # Julia GA | canonical geometric geo_step! engine
@@ -66,6 +67,23 @@ function fast_step!(loop::CognitiveLoop; kwargs...)
     return predict_dynamics(loop.reg, x; kwargs...)
 end
 
+# The canonical OpenPsi modulator names, in the vector order `MetaMoCore._appraise_native` produces
+# (`val, ar, ap, res, thr, sec`). Source of truth: Core/lib/metamo/config.metta:19-24 `(ModulatorIndex …)`.
+# Kept in this order so a stored motive can be read back positionally OR by name.
+const _MODULATOR_NAMES = ("valence", "arousal", "approach", "resolution", "threshold", "securing")
+
+# Write the appraised modulator vector into Smotive as `(motive <name> <urgency>)` — MetaMo's own schema,
+# so `motives`/`dominant_motive`/`govern!` read it back unchanged. `set_motive!` clamps to the safe region
+# [0,1] and appends (latest-wins), matching how beliefs are resolved.
+function _persist_modulators!(reg::SpaceRegistry, mods)
+    m = collect(Float64, mods)
+    for (i, name) in enumerate(_MODULATOR_NAMES)
+        i <= length(m) || break
+        set_motive!(reg, name, m[i])
+    end
+    return nothing
+end
+
 """
     mid_step!(loop, obs; ctx_key=:ctx) -> NamedTuple
 
@@ -90,6 +108,15 @@ function mid_step!(
     governance = governor === nothing ? nothing :              # MetaMo governs WHICH goal to pursue
         govern(governor.goals, governor.mods, governor.stimulus, governor.candidates)
     goal === nothing && governance !== nothing && (goal = governance.chosen)
+    # PERSIST THE MOTIVE STATE. `govern` appraises Ψ and returns the evolved modulators, but nothing wrote
+    # them anywhere: Smotive — the schema's "motives + certificates" space, with a complete space-backed
+    # API (set_motive!/motives/govern!/dominant_motive) — had ZERO production writers, while OmegaClaw
+    # carried the evolving affect state in a Julia struct field (`d.governor = merge(gv, (mods=…))`,
+    # Driver.jl:206, "the motive state is DYNAMIC, shaped by experience"). So WHAT THE AGENT WANTS lived
+    # outside the metagraph: not inspectable, not matchable, not evolvable by MOSES/GEO-EVO, not
+    # .act-persisted — the same defect as Senv/`d.outcomes`, at the top of the cognitive stack.
+    # Names are the CANONICAL ones (Core/lib/metamo/config.metta:19-24 `ModulatorIndex`), not invented.
+    governance === nothing || _persist_modulators!(reg, governance.mods)
     acts = goal === nothing ? [] : select_action(reg, goal)    # PLN action-selection over Srule
     # RECORD WHAT THE AGENT DID, in the metagraph. Senv is the schema's "environment interface —
     # observations / actions" and was declared-but-never-written: the chosen action was returned in a

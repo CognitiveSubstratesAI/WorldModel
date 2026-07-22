@@ -191,6 +191,46 @@ using Random: MersenneTwister
         @test bs !== nothing && isapprox(bs.s, 1.0; atol = 1e-9)
     end
 
+    @testset "motive state is persisted to Smotive (what the agent WANTS is in the metagraph)" begin
+        # Smotive has a complete space-backed API (set_motive!/motives/govern!/dominant_motive) and had
+        # ZERO production writers: `govern` appraised the modulators and mid_step! returned them, while
+        # OmegaClaw carried the evolving affect state in a Julia struct field. So the agent's motivational
+        # state was outside the metagraph — not inspectable, not evolvable, not .act-persisted.
+        r6 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r6)
+        assert_implication!(r6, "dig", "wood", 0.5, 0.9, 0.0)
+        # governor shape per the canonical MetaMo fixture (test_metamo_delegation.jl:50-58):
+        # 8 goals, 6 modulators (valence…securing), 4-channel stimulus, 8-wide candidate correlations.
+        gv = (goals = [0.25, 0.75, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+              mods = fill(0.5, 6),
+              stimulus = [0.8, 0.6, 0.1, 0.2],                # novelty, conduciveness, risk, effort
+              candidates = [(id = "wood", corrs = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], risk = 0.0,
+                             dg = [0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05])])
+        l6 = CognitiveLoop(r6)
+        @test isempty(motives(r6))                            # nothing in Smotive before
+        obs = Observation("f", "vision", "u", "(entity u log)", :e1, Dict(:item => (:thing, :log)))
+        r = mid_step!(l6, obs; governor = gv)
+        @test r.governance !== nothing && r.governance.chosen == "wood"
+
+        ms = motives(r6)
+        @test !isempty(ms)                                    # …and now the motive state IS in the space
+        # stored under the CANONICAL OpenPsi names (lib/metamo/config.metta ModulatorIndex), not invented ids
+        for name in ("valence", "arousal", "approach", "resolution", "threshold", "securing")
+            @test haskey(ms, name)
+            @test 0.0 <= ms[name] <= 1.0                      # set_motive! projects to the safe region
+        end
+        # MetaMo's own readers work on it unchanged — the state is usable, not just written
+        dom = dominant_motive(r6)
+        @test dom !== nothing && dom[1] in keys(ms)
+
+        # and it EVOLVES in the substrate: a second tick under a different stimulus moves the state
+        before = copy(ms)
+        gv2 = merge(gv, (mods = r.governance.mods, stimulus = [0.1, 0.2, 0.9, 0.8]))  # low novelty, high risk
+        mid_step!(l6, Observation("f2", "vision", "u2", "(entity u2 log)", :e2,
+            Dict(:item => (:thing, :log))); governor = gv2)
+        after = motives(r6)
+        @test any(name -> !isapprox(before[name], after[name]; atol = 1e-9), keys(before))
+    end
+
     @testset "Shmh: HMH episodic memory bound — 𝓔_hmh / recall / 𝓓_hmh (§4.4, §6.1.2)" begin
         # two affordance trials encoded as role-filler episodes into Shmh (real FactorVSA hypervectors)
         encode_hmh!(reg, :trial1,
