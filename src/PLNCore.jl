@@ -82,8 +82,15 @@ function select_action(reg::SpaceRegistry, goal::AbstractString; into::Symbol = 
     for (a, b, sab, cab) in impls                                # 2-hop:  X ⇒ Y ⇒ goal (deduction)
         for (y, g, sbg, cbg) in impls
             (y == b && g == goal) || continue
-            tv = truth_deduction(node_stv(reg, a; into), node_stv(reg, b; into),
-                node_stv(reg, goal; into), (s = sab, c = cab), (s = sbg, c = cbg))
+            # ABSENCE SKIPS the candidate — matching lib/pln's own `(= (STV $stv) (empty))`: an unknown
+            # endpoint means the deduction has no premises, so the candidate must VANISH rather than be
+            # scored. (Previously node_stv fabricated (0,0), which failed `_consistent`'s `as > 0`, took
+            # the (s=1,c=0) fallback and inserted every 2-hop candidate at a flat 0.0 — no ranking signal,
+            # yet selectable when no 1-hop candidate existed.) Skipping BEFORE truth_deduction also drops
+            # a parse+metta_run+regex round-trip per pair, which was pure waste on the live mid_step! path.
+            P = node_stv(reg, a; into); Q = node_stv(reg, b; into); R = node_stv(reg, goal; into)
+            (P === nothing || Q === nothing || R === nothing) && continue
+            tv = truth_deduction(P, Q, R, (s = sab, c = cab), (s = sbg, c = cbg))
             tv === nothing || bump!(a, tv.s * tv.c)
         end
     end

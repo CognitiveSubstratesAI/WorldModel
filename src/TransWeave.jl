@@ -45,9 +45,12 @@ function bd_residual(reg::SpaceRegistry, name::AbstractString, src_key::Abstract
     into_xfer::Symbol=:Sxfer, into_rule::Symbol=:Srule)
     corr = correspondence(reg, name; into=into_xfer)
     tgt_key = transfer(corr, src_key)
-    return abs(
-        node_stv(reg, src_key; into=into_rule).s - node_stv(reg, tgt_key; into=into_rule).s
-    )
+    # `node_stv` returns `nothing` for an unbelieved key (absence is not a truth value). This is a
+    # NUMERIC residual, not a deduction, so an absent side is deliberately read as strength 0.0 — the
+    # default is stated HERE, at the call site, rather than fabricated inside the accessor where it
+    # silently poisoned PLN deduction.
+    _strength(key) = (v = node_stv(reg, key; into=into_rule); v === nothing ? 0.0 : v.s)
+    return abs(_strength(src_key) - _strength(tgt_key))
 end
 
 """
