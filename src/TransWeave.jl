@@ -7,6 +7,25 @@
 # R_BD(T) = T∘B_M0 − B_M1∘T measures the bounded ORDER EFFECT. A transfer is admitted (R9) only if its BD
 # residual is small. Composes with PLN (the backup operator B is inference; here the valuation is the
 # belief STV). A per-Space PROCESS over Sxfer + Srule via the registry.
+#
+# ⚠️ FORM GAP (verified 2026-07-23; row "TransWeave transfer (R9)" in `workflows/CODEMAP.md`).
+# Of the EIGHT algorithms named in Hyperon whitepaper Fig. 1 Layer 3 — PLN · ECAN · MOSES · WILLIAM · PC ·
+# SubRep · MetaMo · TransWeave — this is the ONLY one implemented in the wrong FORM. Each of the others is
+# either a MeTTa library with a `*Core.jl` delegating twin (PLN / MOSES / SubRep / MetaMo, plus ECAN in
+# `Core/lib/ecan`), a MORK-native kernel exposed through `MORK.register_grounded!` (WILLIAM — which is
+# CORRECT per whitepaper §3.6: pattern-mining belongs in the MM2/MORK hot-loop tier, not in plain MeTTa),
+# or a numeric organ reached by handle (PC = FabricPC). This module is none of those: pure Julia over
+# `Registry` + `PLN.node_stv`, with ZERO MORK/MeTTa references, no `Core/lib/transweave`, and no
+# `TransWeaveCore.jl` twin.
+#
+# Why it matters: the content here is precisely what MOSES/GEO-EVO should be able to rewrite. The BD
+# residual formula, the admission threshold, and the intertwining guarantee are cognitive POLICY, not
+# substrate — so by the project's boundary test ("would we ever want MOSES/GEO-EVO to rewrite this?" YES
+# ⇒ it must be an atom) they belong in MeTTa. This is also the root of audit item M6: `bd_residual`
+# defaults an absent node to strength 0.0 and `admit_transfer!` then thresholds THAT into an accept, so
+# the LEAST-evidenced case yields the MOST permissive verdict — while the sibling fix in the same commit
+# made absence SKIP in PLNCore. Fixing the form (a `lib/transweave` MeTTa library + a `TransWeaveCore.jl`
+# delegating twin) subsumes M6 rather than patching it.
 
 module TransWeave
 

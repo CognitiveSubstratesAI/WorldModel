@@ -158,6 +158,23 @@ Advances the tick.
 `stale` are the beliefs whose confidence decayed below `threshold`; `revalidated` are the ones actually
 REFRESHED from surviving evidence this step (≤ `revalidate`, the ambient budget). A stale key with no
 evidence left is deliberately absent from `revalidated` — it keeps decaying rather than being propped up.
+
+⚠️ MISSING STAGE — CONCEPT BLENDING (verified 2026-07-23; row "Concept blending" in
+`workflows/CODEMAP.md`). Our own world-model spec defines the ambient loop as a FOUR-link chain —
+`docs/specs/Primus world model/world_model_infrastructure.md:37`: *"mine patterns (S_mine), BLEND
+CONCEPTS, tighten beliefs (PLN in S_rule), consolidate memory (S_hmh)"*, and
+`hyperon_wp_2025_spec.md:400` sequences it: *"ECAN diffuses attention → pattern mining spots recurring
+structures → CONCEPT BLENDING INVENTS COMPOSITES → factor-graph PLN tightens beliefs."* This function
+implements mining, PLN tightening, consolidation, SubRep admission and MOSES/GEO-EVO synthesis — but
+there is NO blending stage, and nothing in the tree implements one (the only repo-wide hit is an
+incidental mention in `Core/lib/subrep/easa.metta`). Blending is the step that INVENTS composites; without
+it the ambient loop can refine and select over existing structure but cannot originate new concepts.
+Reference implementation available at `~/JuliaAGI/dev-zone/conceptBlending` (four approaches) — but note
+its category-theoretic pipeline delegates generalization and morphism-finding to an LLM
+(`generalization_builder.metta` = `(llm:generate-gen …)`), so adopting it as-is would put an LLM
+dependency inside the ambient loop. Our GSLT theory algebra (`Core/src/standard/GSLT.jl`: `Theory` with
+EXTENSION / UNION / REPLACEMENT + `theory_flatten`) is already the algebraic-specification calculus a
+symbolic pushout would need; union is built, the generic-space computation is not.
 """
 function slow_step!(loop::CognitiveLoop; t::Real,
     template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
