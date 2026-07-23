@@ -46,6 +46,44 @@ using MeTTaCore          # to REWRITE a policy atom mid-test and prove it is liv
         @test_throws ErrorException count_atoms(reg, :Shmh)
     end
 
+    # Evidence CIDs are the referential glue of the braid (§5.4), so their PROPERTIES matter more than
+    # their algorithm. `content_id` was a TRUNCATED 32-BIT Julia hash; a collision does not mislabel, it
+    # MERGES two distinct shards under one id, after which `evidence_of` reports one symbol as supported
+    # by the other's evidence and `wm-evidence-count` (feeding `EvidenceConfidence`) INFLATES. Silent,
+    # and biased toward over-confidence. These assertions pin the PROPERTIES, so they stay meaningful if
+    # the scheme later moves to the trie-path addressing the design note calls the end state.
+    @testset "evidence CIDs: collision-resistant + canonically encoded (§5.4)" begin
+        @test content_id("a") == content_id("a")                    # deterministic
+        @test content_id("a") != content_id("b")
+        # 128 bits of SHA-256, NOT the full 64-char digest — MORK symbols are capped at 63 BYTES by
+        # the Rule-of-64 encoding (`MORK/src/expr/Expr.jl:6`) and a 64-char id is SILENTLY TRUNCATED
+        # to 63 on store, after which `fetch_evidence` can never match it. This assertion is the guard.
+        @test length(content_id("a")) == 32
+        @test length(content_id("a")) < 63                           # must fit a MORK symbol
+        @test all(c -> c in "0123456789abcdef", content_id("a"))
+
+        # length-prefixing: a composite payload must not alias a different field split.
+        # Without `_canon`, ["ab","c"] and ["a","bc"] concatenate identically.
+        @test content_id(["ab", "c"]) != content_id(["a", "bc"])
+
+        # THE REGRESSION: no collisions across a corpus far larger than the old 32-bit birthday bound
+        # (~65k). The old scheme was expected to collide here; SHA-256 must not.
+        let n = 200_000, seen = Set{String}()
+            for i in 1:n; push!(seen, content_id("obs$i")); end
+            @test length(seen) == n
+        end
+
+        # and distinct shards stay distinguishable end-to-end through the store
+        let r = SpaceRegistry(manifest(; store = mktempdir()))
+            seed_world_model!(r)
+            a = store_evidence!(r, "saw-a-tree";  modality = "vision")
+            b = store_evidence!(r, "saw-a-rock";  modality = "vision")
+            @test a != b
+            @test !isempty(fetch_evidence(r, a)) && !isempty(fetch_evidence(r, b))
+            @test fetch_evidence(r, a) != fetch_evidence(r, b)
+        end
+    end
+
     @testset "braid: Γ grounding + evidence anchoring + R2 re-perception (§4.3–4.4)" begin
         # obs → evidence shard in Sevid (content-addressed)
         cid = store_evidence!(reg, "frame_0042_block_at_L7"; modality="vision")

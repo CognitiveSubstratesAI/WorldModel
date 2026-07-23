@@ -14,13 +14,71 @@ using ..HMHStore: store_episode!, retrieve, densify
 using ..Dense: put_vec!, get_vec, attach_predictor!, predict_dense, train_dense!
 using ..Kernel: kernel_mu
 using Random: AbstractRNG, default_rng
+using SHA: sha256                      # evidence CIDs — see `content_id` (was a truncated 32-bit hash)
 
 export content_id, store_evidence!, ground!, evidence_of, fetch_evidence
 export encode_hmh!, retrieve_hmh, densify_hmh
 export lift!, kernel_summary!, attach_dynamics!, predict_dynamics, train_dynamics!
 
-"Content ID for an evidence payload — stable content addressing (§4.3)."
-content_id(payload) = string(hash(payload) % 0xffffffff; base=16, pad=8)
+"""
+Content ID for an evidence payload — stable content addressing (§4.3).
+
+WAS a TRUNCATED 32-BIT Julia hash: `string(hash(payload) % 0xffffffff; base=16, pad=8)`. Evidence
+anchoring is the referential glue of the whole braid (§5.4: a symbolic assertion "should usually point
+to content-addressed evidence in `S_evid`"), so a CID collision does not merely mislabel — it SILENTLY
+MERGES two distinct evidence shards under one id. `evidence_of` then reports one symbol as supported by
+the other's evidence, and `wm-evidence-count` (which feeds `EvidenceConfidence`) INFLATES. Confidence
+rising because two unrelated observations hashed alike is the worst failure shape available here:
+silent, and in the direction of over-confidence. Birthday collision ≈65k shards — reachable, since
+`_perceive` mints a shard per distinct input.
+
+Now canonical SHA-256, matching `OmegaClaw/src/Gate.jl:55` (`bytes2hex(sha256(...))`) — the same
+primitive was already in the tree one package away. The payload is LENGTH-PREFIXED before hashing
+(`_canon`, mirroring `Gate.jl:22`) so that a composite payload cannot alias a different field split:
+without it `("ab","c")` and `("a","bc")` hash identically.
+
+⚠️ NOT the end state. In a byte-trie THE PATH IS THE CONTENT ADDRESS — whitepaper §2.1 calls Atomspace
+"a typed, CONTENT-ADDRESSED metagraph", and MORK already ships structural content-addressing
+(`MORK/src/kernel/Sinks.jl:769` `HashSink`, mirroring upstream `sinks.rs`, hashing a SUB-TRIE via
+`zipper_fork!` + path enumeration). The correct long-run design stores evidence in a prefix-scoped trie
+region and uses its path as the id, needing no hash at all. That presupposes the shared-Atomspace work
+(Figure 3's centre), so this is the honest interim: a real digest instead of a 32-bit one, chosen so it
+does not foreclose the trie-path design. Do NOT "upgrade" this to `_zipper_subtrie_hash` — that returns
+a `UInt64` and is built for VERIFICATION, not identity; it would trade a 32-bit collision risk for a
+64-bit one.
+
+COMPATIBILITY: CIDs are never written as literals anywhere (verified: no CID constants in tests or
+fixtures — every one comes from `store_evidence!` at runtime), and a shard and its `(EvidenceOf sym cid)`
+link are persisted together, so previously-persisted `.act` state stays internally consistent. The only
+behavioural change is that re-storing a payload that was first stored under the old scheme yields a new
+id and will not dedupe against the old shard.
+
+⚠️ SUBSTRATE CONSTRAINT — 128 bits, NOT the full digest, and this is NOT the bug being fixed.
+MORK symbols are capped at 63 BYTES by the Rule-of-64 encoding (`MORK/src/expr/Expr.jl:6`:
+`SymbolSize: 0b1100_SSSS (0xC1..0xFF) — S = 1..63 bytes follow`). A full SHA-256 hex digest is 64
+characters — one over — and MORK TRUNCATES IT SILENTLY: the atom stores and reads back fine, one
+character shorter than written, so `fetch_evidence` can never match the id it was given. Measured:
+    cid    = 2a22…7878e   (64)
+    stored = (evidence 2a22…7878 vision saw-a-tree)   (63 — final char gone, no error)
+So the id is the FIRST 128 BITS of the digest. That is a deliberate, sized truncation, not the
+32-bit accident it replaces: birthday collision moves from ~65 000 shards to ~1.8e19, and 32 hex
+characters leave headroom under the 63-byte cap for any future prefixing. Do not raise it to 64.
+"""
+const _CID_HEX = 32                       # 128 bits — see the Rule-of-64 note above (max 63)
+content_id(payload) = bytes2hex(sha256(codeunits(_canon_payload(payload))))[1:_CID_HEX]
+
+# length-prefixed canonical encoding (`len:bytes;`) — no field-boundary aliasing. Mirrors
+# `OmegaClaw/src/Gate.jl:22` `_canon`. A scalar payload is encoded as a single field.
+function _canon_payload(payload)::String
+    fields = payload isa AbstractVector || payload isa Tuple ? String[string(f) for f in payload] :
+                                                               String[string(payload)]
+    io = IOBuffer()
+    for f in fields
+        b = codeunits(f)
+        print(io, length(b), ':'); write(io, b); print(io, ';')
+    end
+    String(take!(io))
+end
 
 """
     store_evidence!(reg, payload; modality="obs") -> cid

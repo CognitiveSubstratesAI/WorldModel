@@ -1,12 +1,7 @@
 name = "WorldModel"
 uuid = "7caf2b4a-d3da-4904-9952-4838239b5f47"
-authors = ["CognitiveSubstrates AI <contact@cognitivesubstrates.com>"]
 version = "0.3.0"
-
-# WorldModel is the live PRIMUS world-modeling application. Its substrate is MORK/PathMap: each Space is a
-# persistent byte-trie (one .act per Space), exactly as the connectome substrate (MORK/examples/connectome)
-# already does. Spaces coexist in one metagraph via shared identifiers (Appendix A) and are queried by
-# prefix-anchored zipper walks (derive-by-query). MORK + PathMap are the only hard deps.
+authors = ["CognitiveSubstrates AI <contact@cognitivesubstrates.com>"]
 
 [deps]
 AdaptiveCompression = "ac000001-0000-4000-8000-000000000001"
@@ -14,28 +9,28 @@ FabricPC = "733d70e2-d01e-4f7f-a093-72992d87e09f"
 FactorVSA = "fac70a5a-0000-4000-8000-000000000001"
 HMH = "fac70b00-0000-4000-8000-000000000002"
 HPC = "b1c2d3e4-f567-8901-abcd-ef0123456789"
-MeTTaCore = "c0e00000-0000-4000-8000-000000000001"
 MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
-MorkSupercompiler = "d4e7c9f0-1234-5678-abcd-ef0123456789"
 MORKTensorNetworks = "e1f2a3b4-c5d6-7890-abcd-ef1234567890"
+MeTTaCore = "c0e00000-0000-4000-8000-000000000001"
+MorkSupercompiler = "d4e7c9f0-1234-5678-abcd-ef0123456789"
 PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
 [sources]
-# AdaptiveCompression (WILLIAM) pulls a transitive chain (MorkSupercompiler → HPC) whose own [sources] use
-# github URLs; pin the whole chain to local sibling paths so a fresh resolve stays offline + consistent.
 AdaptiveCompression = {path = "../WILLIAM"}
-MeTTaCore = {path = "../Core"}
-MorkSupercompiler = {path = "../MorkSupercompiler"}
-HPC = {path = "../HPC"}
 FabricPC = {path = "../FabricPC"}
 FactorVSA = {path = "../FactorVSA"}
 HMH = {path = "../HMH"}
+HPC = {path = "../HPC"}
 MORK = {path = "../MORK"}
 MORKTensorNetworks = {path = "../MORKTensorNetworks"}
+MeTTaCore = {path = "../Core"}
+MorkSupercompiler = {path = "../MorkSupercompiler"}
 PathMap = {path = "../PathMap"}
 
 [compat]
+SHA = "0.7.0"
 julia = "1.12"
 
 [extras]
