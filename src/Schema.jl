@@ -10,7 +10,16 @@ using ..Registry: SpaceRegistry, SYMBOLIC, DENSE, HMH, create_space!, has_space
 
 export WM_SPACE_SCHEMA, seed_world_model!
 
-"`(name, kind, role)` for each canonical Space (Appendix A; roles abbreviated)."
+"""
+`(name, kind, role)` for each canonical Space (Appendix A; roles abbreviated).
+
+⚠️ 14 HERE vs 13 IN THE PAPER — deliberate, not drift. Hyperon Whitepaper 2026 v5 §5.3 Table 2
+("A PRIMUS world-model space braid") lists **13**; the extra one here is `:Skernel`. The paper
+explicitly permits this: "A mature implementation may add spaces for language, social institutions,
+formal proofs, or specialized physics. The point is not to freeze the ontology." Recorded 2026-08-05
+after the count was flagged as a discrepancy — do not "fix" it by deleting `:Skernel`, and do not
+cite 14 to the paper.
+"""
 const WM_SPACE_SCHEMA = (
     (:Senv, SYMBOLIC, "environment interface — observations / actions"),
     (:Sevid, SYMBOLIC, "evidence store — immutable shards, CIDs [R2]"),

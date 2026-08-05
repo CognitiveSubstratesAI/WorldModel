@@ -57,8 +57,22 @@ CognitiveLoop(reg::SpaceRegistry) = CognitiveLoop(reg, 0, nothing)
     fast_step!(loop; rng) -> Vector{Float64} | nothing
 
 FAST path (§3.4, ms): the Sdyn reflex — run the predictive-coding controller forward on the current Sctx
-context vector, with NO Atomspace query. Returns the prediction, or `nothing` if no context/predictor is
-in place yet. Always advances the tick.
+context vector, without a global Atomspace query per tick. Returns the prediction, or `nothing` if no
+context/predictor is in place yet. Always advances the tick.
+
+⚠️ WORDING CORRECTED 2026-08-05. This line read "with NO Atomspace query", which is STRICTER than any
+source. Hyperon Whitepaper 2026 v5 §5.5 says "local PC relaxation in S_dyn *without requiring a global
+Atomspace query on every tick*" — three hedges we had dropped: **global** (not any query), **on every
+tick** (not ever), and it is scoped to PC relaxation rather than asserted over the whole fast lane.
+Line 5 of this file already had it right ("NO full Atomspace query per tick"); only this docstring
+hardened it.
+
+The difference is load-bearing, not pedantic: an absolute no-query rule would force any policy the fast
+lane needs into host-language constants, which is precisely the defect fixed in ECANTensorBridge.jl on
+the same day. A *resolved snapshot*, refreshed by mid/slow (which is how `loop.context` already reaches
+this function), is compatible with what the paper actually requires. The ≤1ms figure that circulated in
+session notes is also not from here or from the paper — §5.5 says "fast path (ms)", which is what line 5
+says. Don't reintroduce either.
 """
 function fast_step!(loop::CognitiveLoop; kwargs...)
     loop.tick += 1
