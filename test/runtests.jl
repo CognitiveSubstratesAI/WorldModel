@@ -466,12 +466,25 @@ using MeTTaCore          # to REWRITE a policy atom mid-test and prove it is liv
     @testset "WILLIAM pattern mining over a Space into Smine (§A.13)" begin
         reg5 = SpaceRegistry(manifest(; store=mktempdir()))
         seed_world_model!(reg5)
+        # ⚠️ A SPACE IS A SET — duplicate atoms COLLAPSE. The previous corpus here was
+        #   "(chop tree wood) (chop tree wood) (chop rock stone) (mine rock stone) (mine rock stone)"
+        # which looks like 5 atoms with repetition but `atoms(reg,:Sent)` returns THREE distinct
+        # ones. So the miner never saw a repeat, and after the 2026-08-05 switch to MDL ranking it
+        # correctly returned NOTHING: three distinct atoms do not compress. The old support ranking
+        # masked the broken premise by scoring length-1 symbols that recur ACROSS distinct atoms —
+        # which is why this test passed while asserting "found frequent patterns".
+        #
+        # Repetition must therefore come from DISTINCT atoms sharing structure. Four atoms sharing
+        # the `chop tree …` prefix give that prefix count=4 ⇒ ΔL = 4*(2-1) - (2+1) = 1 > 0, just
+        # over the compression condition.
         add!(reg5, :Sent,
-            "(chop tree wood) (chop tree wood) (chop rock stone) (mine rock stone) (mine rock stone)"
+            "(chop tree wood) (chop tree stone) (chop tree ore) (chop tree gem) (mine rock stone)"
         )
+        @test length(atoms(reg5, :Sent)) == 5                  # all five are DISTINCT — no collapse
         pats = mine!(reg5; from=:Sent, k=5)
-        @test !isempty(pats)                                   # WILLIAM found frequent patterns
-        @test any(occursin("chop", p) for (p, w) in pats)      # the recurring (chop …) structure
+        @test !isempty(pats)                                   # a genuinely compressing pattern exists
+        @test all(w > 0 for (_, w) in pats)                    # every result clears the condition
+        @test any(occursin("chop", p) for (p, w) in pats)      # the shared (chop tree …) structure
         @test !isempty(mined_patterns(reg5))                   # stored in Smine
     end
 
