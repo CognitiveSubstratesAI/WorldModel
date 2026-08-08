@@ -124,7 +124,7 @@ using MeTTaCore          # to REWRITE a policy atom mid-test and prove it is liv
         # `(= (stale-threshold) 0.0)` leaves both live and every rule reading it forks nondeterministically
         # (observed: each stale key reported twice, at two different priorities).
         sp = WorldModel.PLNCore._space()
-        ev(e) = MeTTaCore.Interpreter.load_metta!(sp, e)
+        ev(e) = MeTTaCore.Eval.load_metta!(sp, e)
         try
             ev("!(remove-atom &self (= (stale-threshold) 0.3))")
             ev("!(add-atom &self (= (stale-threshold) 0.0))")     # nothing can decay below 0 ⇒ never stale

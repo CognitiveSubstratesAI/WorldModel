@@ -11,8 +11,8 @@
 module MOSESCore
 
 using MeTTaCore
-using MeTTaCore.Interpreter
-using MeTTaCore.Interpreter.StandardMeTTa
+using MeTTaCore.Eval
+using MeTTaCore.Eval.StandardMeTTa
 
 const _ORDER = split("utilities instance map multimap tree knob logical_canonize rte_helpers " *
     "propagate_not gather_junctors cut_unnecessary_or cut_unnecessary_and promote_common_constraints " *

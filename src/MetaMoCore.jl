@@ -11,8 +11,8 @@
 module MetaMoCore
 
 using MeTTaCore
-using MeTTaCore.Interpreter
-using MeTTaCore.Interpreter.StandardMeTTa
+using MeTTaCore.Eval
+using MeTTaCore.Eval.StandardMeTTa
 
 const _SPACE = Ref{Any}(nothing)
 function _space()

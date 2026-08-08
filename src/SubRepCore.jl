@@ -9,8 +9,8 @@
 module SubRepCore
 
 using MeTTaCore
-using MeTTaCore.Interpreter
-using MeTTaCore.Interpreter.StandardMeTTa
+using MeTTaCore.Eval
+using MeTTaCore.Eval.StandardMeTTa
 using ..Registry: SpaceRegistry, add!, query_head
 
 const _SPACE = Ref{Any}(nothing)

@@ -12,8 +12,8 @@
 module PLNCore
 
 using MeTTaCore
-using MeTTaCore.Interpreter
-using MeTTaCore.Interpreter.StandardMeTTa
+using MeTTaCore.Eval
+using MeTTaCore.Eval.StandardMeTTa
 using ..Registry: SpaceRegistry, query_head
 using ..Beliefs: beliefs, assert_belief!
 using ..Braid: evidence_of
@@ -26,8 +26,8 @@ using ..PLN: node_stv
 const STV = NamedTuple{(:s, :c), Tuple{Float64, Float64}}
 
 # Interpreter-side names are NOT exported (MettaLoop.jl qualifies them the same way) — alias explicitly.
-const _I = MeTTaCore.Interpreter
-const _S = MeTTaCore.Interpreter.StandardMeTTa
+const _I = MeTTaCore.Eval
+const _S = MeTTaCore.Eval.StandardMeTTa
 
 # Lazily-built, process-cached Core space holding the canonical lib/pln (stdlib + stv + core logic).
 const _SPACE = Ref{Any}(nothing)
