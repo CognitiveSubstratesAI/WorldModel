@@ -8,18 +8,37 @@
 module Substrate
 
 using MORK:
-    Space, new_space, space_add_all_sexpr!, space_dump_all_sexpr, space_val_count, UNIT_VAL
+    Space, new_space, space_add_all_sexpr!, space_remove_all_sexpr!, space_dump_all_sexpr,
+    space_val_count, UNIT_VAL
 using PathMap: act_from_zipper, act_save, act_open_mmap,
     read_zipper_at_path, zipper_to_next_val!, zipper_path, set_val_at!
 
 export Space,
-    fresh, add_sexpr!, val_count, dump_atoms, snapshot_act!, load_act!, walk_prefix
+    fresh, add_sexpr!, remove_sexpr!, val_count, dump_atoms, snapshot_act!, load_act!,
+    walk_prefix
 
 "A fresh, empty Space (its own MORK byte-trie)."
 fresh() = new_space()
 
 "Add one or more whitespace-separated s-expressions to the Space."
 add_sexpr!(s::Space, src::AbstractString) = space_add_all_sexpr!(s, src)
+
+"""
+Remove one or more whitespace-separated s-expressions from the Space, returning the count removed.
+
+Wraps MORK `space_remove_all_sexpr!` (`Space.jl:194`), the mirror of `space_add_all_sexpr!`.
+
+🔴 EXPOSED FOR ONE REASON: v5 §5.4 lists "tests that a derived claim cannot silently survive the
+RETRACTION of its supporting evidence" among the six validation procedures for evidence anchoring.
+That property is untestable without a way to withdraw a shard, so before this the traceability
+those CIDs exist to provide was asserted and never exercised.
+
+⚠️ THIS IS NOT A CASCADE. Removing an evidence shard leaves every `(EvidenceOf key cid)` pointer
+standing — deliberately. Evidence is immutable and symbols are INDICES INTO IT (§4.3/§6.1.1), so
+deciding a claim should also go is a separate judgement from DETECTING that its support is gone.
+`Braid.provenance_closure` is the detector; this is only the withdrawal.
+"""
+remove_sexpr!(s::Space, src::AbstractString) = space_remove_all_sexpr!(s, src)
 
 "Number of atoms stored in the Space."
 val_count(s::Space) = space_val_count(s)

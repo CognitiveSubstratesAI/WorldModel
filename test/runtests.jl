@@ -3,6 +3,17 @@ using Test
 using Random: MersenneTwister
 using MeTTaCore          # to REWRITE a policy atom mid-test and prove it is live, not a Julia default
 
+# 🔴 DISAMBIGUATE `space_kind`. BOTH packages export it — `WorldModel/src/Registry.jl:15` (a Space's
+# representational regime: SYMBOLIC/DENSE/HMH) and `MeTTaCore.jl:331` (Core's space-KIND registry,
+# added 2026-08-14 with `Core/src/space/Spaces.jl`). Two `using`s of clashing exports makes the bare
+# name UNDEFINED in Julia, not merely shadowed.
+#
+# ⚠️ THIS SUITE HAD BEEN RED FOR A WEEK because of it — verified by running clean HEAD, 3 errors,
+# exit 1 — and nothing noticed, because nothing runs this suite. Same shape as HMH's unwired
+# admissibility gate. The two `space_kind`s mean genuinely different things, so this is a naming
+# collision to disambiguate at the call site, not a duplicate to delete.
+using WorldModel: space_kind
+
 @testset "WorldModel infra spine — real MORK/PathMap substrate" begin
     store = mktempdir()                              # ephemeral store for the test
     m = manifest(; store=store)
@@ -583,3 +594,9 @@ include("test_pln_delegation.jl")
 include("test_subrep_delegation.jl")
 include("test_metamo_delegation.jl")
 include("test_moses_delegation.jl")
+
+# v5 §5.4 evidence-validation procedures (3) provenance closure and (6) "a derived claim cannot
+# silently survive the retraction of its supporting evidence". Before this, the STORAGE half of
+# evidence anchoring was tested and the TRACEABILITY half was asserted — there was no way to
+# withdraw a shard, so the property could not be exercised at all.
+include("test_provenance_closure.jl")

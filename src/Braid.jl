@@ -9,14 +9,15 @@
 
 module Braid
 
-using ..Registry: SpaceRegistry, add!, query_head, hmh_index, dense_store
+using ..Registry: SpaceRegistry, add!, remove!, query_head, hmh_index, dense_store
 using ..HMHStore: store_episode!, retrieve, densify
 using ..Dense: put_vec!, get_vec, attach_predictor!, predict_dense, train_dense!
 using ..Kernel: kernel_mu
 using Random: AbstractRNG, default_rng
 using SHA: sha256                      # evidence CIDs — see `content_id` (was a truncated 32-bit hash)
 
-export content_id, store_evidence!, ground!, evidence_of, fetch_evidence
+export content_id, store_evidence!, retract_evidence!, ground!, evidence_of, fetch_evidence
+export provenance_closure
 export encode_hmh!, retrieve_hmh, densify_hmh
 export lift!, kernel_summary!, attach_dynamics!, predict_dynamics, train_dynamics!
 
@@ -134,6 +135,54 @@ retrieved when a missing detail later matters (the cure for symbolic blindness, 
 """
 fetch_evidence(reg::SpaceRegistry, cid::AbstractString) =
     [a for a in query_head(reg, :Sevid, "evidence") if startswith(a, "(evidence $cid ")]
+
+"""
+    retract_evidence!(reg, cid) -> Int
+
+Withdraw every evidence shard with content ID `cid` from `Sevid`; returns how many were removed.
+
+🔴 EXISTS TO MAKE A v5 PROPERTY TESTABLE. Whitepaper v5 §5.4 lists, among the six validation
+procedures for evidence anchoring, *"tests that a derived claim cannot silently survive the
+retraction of its supporting evidence."* Without a retraction there is no such test, and the
+traceability the 128-bit CIDs exist to provide stays asserted rather than exercised. v5 also names
+*"corrupted or unavailable blobs"* among its eight failure modes — this reproduces that mode on
+purpose.
+
+⚠️ DELIBERATELY NOT A CASCADE. Every `(EvidenceOf key cid)` pointer is left standing. Evidence is
+immutable and symbols are INDICES INTO IT (§4.3/§6.1.1), so deciding a dependent claim must also go
+is a judgement this function does not make. [`provenance_closure`] is what makes the resulting hole
+audible, which is the actual content of "cannot SILENTLY survive".
+"""
+retract_evidence!(reg::SpaceRegistry, cid::AbstractString) =
+    remove!(reg, :Sevid, join(fetch_evidence(reg, cid), " "))
+
+"""
+    provenance_closure(reg; into=:Sent) -> Vector{Tuple{String, String}}
+
+v5 §5.4 procedure (3), *"provenance-closure checks"*: every `(key, cid)` in `into` whose
+`(EvidenceOf key cid)` pointer names a shard that `Sevid` no longer holds.
+
+An EMPTY result is the healthy state: every claim's support is still fetchable. A non-empty one
+names claims standing on evidence that is gone — which is exactly the condition v5 requires not to
+pass silently.
+
+⚠️ THIS IS A DETECTOR, NOT A POLICY. It reports; it does not delete, downgrade a truth value, or
+refuse a query. What to DO about a dangling claim is a separate decision, and one v5 does not make
+either — its language is about the failure being *visible*, not about the remedy.
+
+Derive-by-query over the `(EvidenceOf …)` atoms, mirroring [`evidence_of`]'s parse.
+"""
+function provenance_closure(reg::SpaceRegistry; into::Symbol=:Sent)
+    dangling = Tuple{String, String}[]
+    for a in query_head(reg, into, "EvidenceOf")
+        inner = strip(a[(length("(EvidenceOf ") + 1):(end - 1)])
+        parts = split(inner)
+        length(parts) == 2 || continue          # malformed pointer: not this check's business
+        key, cid = String(parts[1]), String(parts[2])
+        isempty(fetch_evidence(reg, cid)) && push!(dangling, (key, cid))
+    end
+    return dangling
+end
 
 # ── HMH arrows of the braid (§4.4, §6.1.2) — Shmh associative memory ────────────────────────────────
 

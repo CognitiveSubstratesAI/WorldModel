@@ -84,11 +84,13 @@ export SpaceKind, SYMBOLIC, DENSE, HMH, WMSpace, SpaceRegistry
 export create_space!,
     delete_space!, has_space, list_spaces, space_kind, store_dir, hmh_index
 # Scoped operations
-export add!, atoms, count_atoms, query_head, persist!
+export add!, remove!, atoms, count_atoms, query_head, persist!
 # Canonical schema
 export WM_SPACE_SCHEMA, seed_world_model!
 # Braid — inter-space flows: symbolic (Γ grounding + evidence anchoring + R2) and HMH (𝓔/𝓓 + recall)
-export content_id, store_evidence!, ground!, evidence_of, fetch_evidence
+export content_id, store_evidence!, retract_evidence!, ground!, evidence_of, fetch_evidence
+# v5 §5.4(3) provenance-closure check — the detector that makes a retracted-evidence hole audible
+export provenance_closure
 export encode_hmh!, retrieve_hmh, densify_hmh
 # HMH store surface (Shmh backend)
 export HMHIndex, record_keys, record_pointers

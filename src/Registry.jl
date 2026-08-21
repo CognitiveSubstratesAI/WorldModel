@@ -13,7 +13,7 @@ using ..Dense
 
 export SpaceKind, SYMBOLIC, DENSE, HMH, WMSpace, SpaceRegistry
 export create_space!, delete_space!, has_space, list_spaces, space_kind
-export add!, atoms, count_atoms, query_head, persist!, store_dir, hmh_index, dense_store
+export add!, remove!, atoms, count_atoms, query_head, persist!, store_dir, hmh_index, dense_store
 
 "Representational regime of a Space (§3.2/§4.2). SYMBOLIC = a MORK trie; DENSE/HMH bind later."
 @enum SpaceKind SYMBOLIC DENSE HMH
@@ -118,6 +118,15 @@ end
 "Add atom(s) (s-expression string) to Space `name`."
 add!(reg::SpaceRegistry, name::Symbol, sexpr::AbstractString) =
     (Substrate.add_sexpr!(_trie(reg, name), sexpr); nothing)
+
+"""
+Remove s-expressions from Space `name`; returns the number removed.
+
+See `Substrate.remove_sexpr!` for why a retraction primitive exists at all (v5 §5.4's sixth
+validation procedure) and for why it deliberately does NOT cascade to dependent claims.
+"""
+remove!(reg::SpaceRegistry, name::Symbol, sexpr::AbstractString) =
+    Substrate.remove_sexpr!(_trie(reg, name), sexpr)
 
 "All atoms in Space `name` as s-expression strings."
 atoms(reg::SpaceRegistry, name::Symbol) = Substrate.dump_atoms(_trie(reg, name))
