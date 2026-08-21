@@ -24,8 +24,34 @@ jobs:
         os:
           - ubuntu-latest
     steps:
-      # WorldModel is standalone (no [sources] dependencies) — nothing to clone as a sibling.
       - uses: actions/checkout@v4
+      # 🔴 THIS COMMENT USED TO READ "WorldModel is standalone (no [sources] dependencies) —
+      # nothing to clone as a sibling." THAT WAS FALSE, and it was load-bearing: WorldModel has
+      # NINE path [sources], so `julia-buildpkg` could not resolve `../MORK` et al. and this
+      # workflow failed before running a single test. Every other package in the workspace clones
+      # its siblings (FactorVSA 1, HMH 1, MORKTensorNetworks 2, MorkSupercompiler 4, Core 3);
+      # WorldModel needed the most and cloned none.
+      #
+      # ⚠️ THE COST OF THE FALSEHOOD WAS A WEEK OF SILENCE. `space_kind` became ambiguous when Core
+      # added its own on 2026-08-14 (`Core/src/space/Spaces.jl`), turning this suite red. Nothing
+      # noticed, because CI could not get far enough to notice. Verified by running clean HEAD
+      # locally: 3 errors, exit 1. With this fix the suite is 704 assertions, exit 0.
+      #
+      # ⚠️ URLS READ FROM THE ACTUAL REMOTES, NOT ASSUMED. HPC is still under `sivaji1012`;
+      # everything else has migrated to `CognitiveSubstratesAI`. `MeTTaCore` lives in the repo
+      # named **Core**, so the clone target must be `../Core`, matching Project.toml's
+      # `MeTTaCore = {path = "../Core"}` — cloning it as `../MeTTaCore` would resolve to nothing.
+      - name: Clone path [sources] dependencies as siblings
+        run: |
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/PathMap.git ../PathMap
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORK.git ../MORK
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/Core.git ../Core
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/FactorVSA.git ../FactorVSA
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/HMH.git ../HMH
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/FabricPC.git ../FabricPC
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORKTensorNetworks.git ../MORKTensorNetworks
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/MorkSupercompiler.git ../MorkSupercompiler
+          git clone --depth 1 https://github.com/sivaji1012/HPC.git ../HPC
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
