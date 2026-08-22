@@ -12,7 +12,7 @@ MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
 MORKTensorNetworks = "e1f2a3b4-c5d6-7890-abcd-ef1234567890"
 MeTTaCore = "c0e00000-0000-4000-8000-000000000001"
 MorkSupercompiler = "d4e7c9f0-1234-5678-abcd-ef0123456789"
-PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
+PathMaps = "a8b3d4e5-f012-4567-89ab-cdef01234567"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
@@ -25,7 +25,7 @@ MORK = {path = "../MORK"}
 MORKTensorNetworks = {path = "../MORKTensorNetworks"}
 MeTTaCore = {path = "../Core"}
 MorkSupercompiler = {path = "../MorkSupercompiler"}
-PathMap = {path = "../PathMap"}
+PathMaps = {path = "../PathMap"}
 
 [compat]
 SHA = "0.7.0"

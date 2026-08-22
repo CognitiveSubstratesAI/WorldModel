@@ -5,7 +5,7 @@
 # similarity (structured associative recall — "similar situations even when descriptions differ", §6.1.2);
 # 𝓓_hmh densification is the hypervector itself (BipolarMAP = {±1}^D, the algebra channel of Appendix B).
 #
-# This is the ONLY module that touches HMH/FactorVSA, mirroring Substrate.jl's isolation of MORK/PathMap.
+# This is the ONLY module that touches HMH/FactorVSA, mirroring Substrate.jl's isolation of MORK/PathMaps.
 
 module HMHStore
 

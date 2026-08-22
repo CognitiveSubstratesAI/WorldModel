@@ -1,6 +1,6 @@
 # Substrate.jl — the MORK/PathMap backing for a Space.
 #
-# This is the ONLY module that touches MORK/PathMap. A Space is a persistent byte-trie (a MORK `Space`);
+# This is the ONLY module that touches MORK/PathMaps. A Space is a persistent byte-trie (a MORK `Space`);
 # atoms are s-expressions; persistence is a `.act` snapshot (cold-mmap reload); queries are prefix-anchored
 # zipper walks (derive-by-query). Everything here mirrors the connectome substrate's proven primitives
 # (MORK/examples/connectome). Keeping all substrate calls in one module lets the registry stay logical.
@@ -10,7 +10,7 @@ module Substrate
 using MORK:
     Space, new_space, space_add_all_sexpr!, space_remove_all_sexpr!, space_dump_all_sexpr,
     space_val_count, UNIT_VAL
-using PathMap: act_from_zipper, act_save, act_open_mmap,
+using PathMaps: act_from_zipper, act_save, act_open_mmap,
     read_zipper_at_path, zipper_to_next_val!, zipper_path, set_val_at!
 
 export Space,
