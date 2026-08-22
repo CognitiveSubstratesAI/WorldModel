@@ -68,8 +68,8 @@ function beliefs(reg::SpaceRegistry; into::Symbol=:Srule)
     for a in query_head(reg, into, "belief")
         toks = split(strip(a)[2:(end - 1)])               # ["belief", key, s, c, t]
         length(toks) == 5 || continue
-        s = tryparse(Float64, toks[3]);
-        c = tryparse(Float64, toks[4]);
+        s = tryparse(Float64, toks[3])
+        c = tryparse(Float64, toks[4])
         t = tryparse(Float64, toks[5])
         (s === nothing || c === nothing || t === nothing) && continue
         key = String(toks[2])
@@ -77,7 +77,7 @@ function beliefs(reg::SpaceRegistry; into::Symbol=:Srule)
         (prev === nothing || (t, c) > (prev[3], prev[2])) && (latest[key] = (s, c, t))
     end
     return Tuple{String, Float64, Float64, Float64}[
-        (k, v[1], v[2], v[3]) for (k, v) in sort!(collect(latest); by = first)]
+        (k, v[1], v[2], v[3]) for (k, v) in sort!(collect(latest); by=first)]
 end
 
 end # module Beliefs

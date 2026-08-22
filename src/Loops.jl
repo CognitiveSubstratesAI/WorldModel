@@ -86,7 +86,9 @@ end
 # The canonical OpenPsi modulator names, in the vector order `MetaMoCore._appraise_native` produces
 # (`val, ar, ap, res, thr, sec`). Source of truth: Core/lib/metamo/config.metta:19-24 `(ModulatorIndex …)`.
 # Kept in this order so a stored motive can be read back positionally OR by name.
-const _MODULATOR_NAMES = ("valence", "arousal", "approach", "resolution", "threshold", "securing")
+const _MODULATOR_NAMES = (
+    "valence", "arousal", "approach", "resolution", "threshold", "securing"
+)
 
 # Write the appraised modulator vector into Smotive as `(motive <name> <urgency>)` — MetaMo's own schema,
 # so `motives`/`dominant_motive`/`govern!` read it back unchanged. `set_motive!` clamps to the safe region
@@ -112,7 +114,8 @@ OpenPsi motive state (§A.9 / infrastructure: S_motive → MetaMo → action sel
 over Srule to select an action for it. Returns `(; cid, context, context_vector, action, goal, governance)`.
 """
 function mid_step!(
-    loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx, goal=nothing, governor=nothing
+    loop::CognitiveLoop, obs::Observation; ctx_key::Symbol=:ctx, goal=nothing,
+    governor=nothing
 )
     reg = loop.reg
     cid = store_evidence!(reg, obs.payload; modality=obs.modality)
@@ -121,8 +124,11 @@ function mid_step!(
     v = lift!(reg, ctx_key, obs.slots)
     loop.context = ctx_key
     loop.tick += 1
-    governance = governor === nothing ? nothing :              # MetaMo governs WHICH goal to pursue
+    governance = if governor === nothing
+        nothing              # MetaMo governs WHICH goal to pursue
+    else              # MetaMo governs WHICH goal to pursue
         govern(governor.goals, governor.mods, governor.stimulus, governor.candidates)
+    end
     goal === nothing && governance !== nothing && (goal = governance.chosen)
     # PERSIST THE MOTIVE STATE. `govern` appraises Ψ and returns the evolved modulators, but nothing wrote
     # them anywhere: Smotive — the schema's "motives + certificates" space, with a complete space-backed
@@ -192,7 +198,7 @@ symbolic pushout would need; union is built, the generic-space computation is no
 """
 function slow_step!(loop::CognitiveLoop; t::Real,
     template_key::Symbol=:template, mine_from::Symbol=:Sent, k::Int=5, eps_pds::Real=0.1,
-    revalidate::Union{Int,Nothing}=nothing, base_rate_limit::Union{Int,Nothing}=nothing,
+    revalidate::Union{Int, Nothing}=nothing, base_rate_limit::Union{Int, Nothing}=nothing,
     synthesis=nothing)
     reg = loop.reg
     # R10 CLOSES THE LOOP: re-validate the decayed beliefs instead of only reporting them. Until now
@@ -215,7 +221,7 @@ function slow_step!(loop::CognitiveLoop; t::Real,
     # old loop it stayed a candidate forever and consumed a slot on every future pass — sixteen such keys
     # sorting early and no later belief would ever be re-validated again.
     amb = ambient_revalidate!(reg, t; into=:Srule,
-        budget = revalidate === nothing ? PLNCore.revalidate_budget() : revalidate)
+        budget=revalidate === nothing ? PLNCore.revalidate_budget() : revalidate)
     stale, revalidated = amb.stale, amb.revalidated
     brlimit = base_rate_limit === nothing ? PLNCore.base_rate_limit() : base_rate_limit
     # Node BASE RATES (§7 "tighten"): recompute the extensional prior of every perceived concept so
@@ -223,27 +229,45 @@ function slow_step!(loop::CognitiveLoop; t::Real,
     # before, which is why that branch never contributed. Ambient, budgeted, and absent-by-default —
     # a concept with no extension gets no belief rather than a fabricated zero.
     base_rates = refresh_base_rates!(reg, t; into=mine_from, head="entity",
-                                     into_rule=:Srule, limit=brlimit)
+        into_rule=:Srule, limit=brlimit)
     # …and the AGENT'S OWN universes, recorded by mid_step! into Senv: what it did and what it pursued.
     # Perceived types get a prior from Sent; action/goal symbols have no extension there, so without
     # these they stay absent and every 2-hop candidate over the ACTION graph is skipped.
-    append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="action",
-                                            into_rule=:Srule, limit=brlimit))
-    append!(base_rates, refresh_base_rates!(reg, t; into=:Senv, head="goal",
-                                            into_rule=:Srule, limit=brlimit))
+    append!(
+        base_rates,
+        refresh_base_rates!(reg, t; into=:Senv, head="action",
+            into_rule=:Srule, limit=brlimit)
+    )
+    append!(
+        base_rates,
+        refresh_base_rates!(reg, t; into=:Senv, head="goal",
+            into_rule=:Srule, limit=brlimit)
+    )
     consolidated = consolidate!(hmh_index(reg, :Shmh), template_key)
     mined = mine!(reg; from=mine_from, k=k)            # WILLIAM mining → Smine
     admitted = admit_proposed!(reg; eps_pds=eps_pds)   # canonical SubRep CDS+PDS → Sopt
-    synthesized = synthesis === nothing ? nothing :    # engine=:geometric ⇒ canonical geo_step!; else Julia GA
-        (get(synthesis, :engine, :julia) === :geometric ?
-            geo_synthesize_geometric!(reg, synthesis.fitness, synthesis.primitives;
-                subgoals=get(synthesis, :subgoals, Any[]), goal=get(synthesis, :goal, :G),
-                recombine=get(synthesis, :recombine, false), rng=get(synthesis, :rng, default_rng())) :
-            geo_synthesize!(reg, synthesis.fitness, synthesis.weakness, synthesis.primitives;
-                gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
-                subgoals=get(synthesis, :subgoals, Any[]), rng=get(synthesis, :rng, default_rng())))
+    synthesized = if synthesis === nothing
+        nothing    # engine=:geometric ⇒ canonical geo_step!; else Julia GA
+    else    # engine=:geometric ⇒ canonical geo_step!; else Julia GA
+        (
+            if get(synthesis, :engine, :julia) === :geometric
+                geo_synthesize_geometric!(reg, synthesis.fitness, synthesis.primitives;
+                    subgoals=get(synthesis, :subgoals, Any[]),
+                    goal=get(synthesis, :goal, :G),
+                    recombine=get(synthesis, :recombine, false),
+                    rng=get(synthesis, :rng, default_rng()))
+            else
+                geo_synthesize!(reg, synthesis.fitness, synthesis.weakness,
+                    synthesis.primitives;
+                    gamma=get(synthesis, :gamma, 0.3), mu=get(synthesis, :mu, 0.0),
+                    subgoals=get(synthesis, :subgoals, Any[]),
+                    rng=get(synthesis, :rng, default_rng()))
+            end
+        )
+    end
     loop.tick += 1
-    return (; stale=stale, revalidated=revalidated, examined=amb.examined, base_rates=base_rates,
+    return (; stale=stale, revalidated=revalidated, examined=amb.examined,
+        base_rates=base_rates,
         consolidated=consolidated, mined=mined, admitted=admitted, synthesized=synthesized)
 end
 

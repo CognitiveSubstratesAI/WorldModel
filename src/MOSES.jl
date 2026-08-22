@@ -89,7 +89,8 @@ function geo_synthesize!(reg::SpaceRegistry, fitness, weakness,
     primitives::AbstractVector{<:AbstractString}; gamma::Real=0.3, mu::Real=0.0,
     subgoals::AbstractVector=Any[], kwargs...)
     motifs = [Set(Symbol(x) for x in sg) for sg in subgoals]
-    align(p) = isempty(motifs) ? 0.0 : maximum(geo_cover(Set(Symbol.(p)), m) for m in motifs)
+    align(p) =
+        isempty(motifs) ? 0.0 : maximum(geo_cover(Set(Symbol.(p)), m) for m in motifs)
     score(p) = float(fitness(p)) - gamma * float(weakness(p)) + mu * align(p)
     best, _ = synthesize!(reg, score, primitives; kwargs...)
     return (best, score(best), float(fitness(best)), float(weakness(best)), align(best))
@@ -100,11 +101,14 @@ programs(reg::SpaceRegistry; into::Symbol=:Sprog) = query_head(reg, into, "progr
 
 # the op-set reachable from a DAG node (the node's program), for fitness over geo_step!'s demes
 function _node_ops(store, id::UInt64)::Set{Symbol}
-    seen = Set{UInt64}(); stack = UInt64[id]; ops = Set{Symbol}()
+    seen = Set{UInt64}()
+    stack = UInt64[id]
+    ops = Set{Symbol}()
     while !isempty(stack)
         i = pop!(stack)
         (i in seen || !haskey(store.nodes, i)) && continue
-        push!(seen, i); push!(ops, store.nodes[i].head)
+        push!(seen, i)
+        push!(ops, store.nodes[i].head)
         append!(stack, store.nodes[i].children)
     end
     return ops
@@ -121,7 +125,8 @@ the best program in Sprog. Returns `(best_ops, align)` where `align = 1 − Ω_a
 converge onto a subgoal). With no `subgoals`, `geo_step!` runs unsteered (plain deme MOSES).
 """
 function geo_synthesize_geometric!(reg::SpaceRegistry, fitness,
-    primitives::AbstractVector{<:AbstractString}; subgoals::AbstractVector=Any[], goal::Symbol=:G,
+    primitives::AbstractVector{<:AbstractString}; subgoals::AbstractVector=Any[],
+    goal::Symbol=:G,
     gens::Int=5, n_inject::Int=12, recombine::Bool=false, into::Symbol=:Sprog,
     rng::AbstractRNG=default_rng())
     # §7 recombination path: assemble building blocks (op-sets) into a MULTI-OP program covering the
@@ -150,7 +155,9 @@ function geo_synthesize_geometric!(reg::SpaceRegistry, fitness,
     fit(store, id) = float(fitness(String[String(op) for op in _node_ops(store, id)]))
     res = nothing
     for _ in 1:gens
-        res = geo_step!([d], s, goal, p; fitness_fn=fit, steer=true, n_inject=n_inject, rng=rng)
+        res = geo_step!(
+            [d], s, goal, p; fitness_fn=fit, steer=true, n_inject=n_inject, rng=rng
+        )
     end
     isempty(d.fitnesses) && return (String[], 0.0)
     best = sort(String[String(op) for op in _node_ops(d.store, argmax(d.fitnesses))])

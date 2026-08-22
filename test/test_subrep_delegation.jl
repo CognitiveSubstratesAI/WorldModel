@@ -17,16 +17,18 @@ const SubRepCore = WorldModel.SubRepCore
     rng = MersenneTwister(20260622)
     agree = 0
     for _ in 1:80
-        dr = round(2 * rand(rng) - 1; digits = 3)
-        dn = [round(2 * rand(rng) - 1; digits = 3) for _ in 1:rand(rng, 1:4)]
-        eps = round(0.3 * rand(rng); digits = 3)
+        dr = round(2 * rand(rng) - 1; digits=3)
+        dn = [round(2 * rand(rng) - 1; digits=3) for _ in 1:rand(rng, 1:4)]
+        eps = round(0.3 * rand(rng); digits=3)
         jm = SubRep.cds_margin(dr, dn)
         lm = SubRepCore.cds_margin(dr, dn)
         @test lm !== nothing
-        @test isapprox(jm, lm; atol = 1e-6)
+        @test isapprox(jm, lm; atol=1e-6)
         @test SubRep.cds_admit(dr, dn, eps) == SubRepCore.cds_admit(dr, dn, eps)
-        (isapprox(jm, lm; atol = 1e-6) &&
-         SubRep.cds_admit(dr, dn, eps) == SubRepCore.cds_admit(dr, dn, eps)) && (agree += 1)
+        (
+            isapprox(jm, lm; atol=1e-6) &&
+            SubRep.cds_admit(dr, dn, eps) == SubRepCore.cds_admit(dr, dn, eps)
+        ) && (agree += 1)
     end
     @test agree == 80
 
@@ -39,7 +41,7 @@ const SubRepCore = WorldModel.SubRepCore
 end
 
 @testset "SubRep ambient option certification on the LIVE path (slow_step!)" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     # the ambient loop's source: proposed option-candidates with their backed-up improvement (Δr, Δn)
     SubRepCore.propose_option!(reg, "dominating", 0.5, [0.25, 0.25])   # margin +0.75  → CDS admits
@@ -47,7 +49,7 @@ end
     SubRepCore.propose_option!(reg, "bad", 0.0, [-0.5])               # margin -0.5   → both reject
 
     loop = CognitiveLoop(reg)
-    s = slow_step!(loop; t = 1.0, eps_pds = 0.1)                       # the ambient cycle runs canonical SubRep
+    s = slow_step!(loop; t=1.0, eps_pds=0.1)                       # the ambient cycle runs canonical SubRep
     @test "dominating" in s.admitted.cds          # CDS admits the dominating option
     @test "complementary" in s.admitted.pds       # PDS admits the complementary one CDS rejects (NEW capability)
     @test "bad" in s.admitted.rejected            # both reject the dominated option
@@ -56,7 +58,7 @@ end
     @test !("bad" in admitted_options(reg))
 
     # idempotent — a second ambient pass admits nothing new
-    s2 = slow_step!(loop; t = 2.0)
+    s2 = slow_step!(loop; t=2.0)
     @test isempty(s2.admitted.cds) && isempty(s2.admitted.pds)
     @info "SubRep ambient: CDS admitted `dominating`, PDS admitted `complementary` (CDS rejects), live on slow_step!"
 end

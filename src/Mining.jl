@@ -58,8 +58,11 @@ function mine!(reg::SpaceRegistry; from::Symbol=:Sent, into::Symbol=:Smine,
     end
     isempty(data_atoms) && return Tuple{String, Float64}[]
     results = MorkSupercompiler.run_trie_miner(
-        MorkSupercompiler.TEMPLATE_EVIDENCE_CAPSULE, data_atoms; k = k, max_depth = max_depth)
-    pairs = [(isempty(pat) ? "()" : "(" * join(string.(pat), " ") * ")", w) for (pat, w) in results]
+        MorkSupercompiler.TEMPLATE_EVIDENCE_CAPSULE, data_atoms; k=k, max_depth=max_depth)
+    pairs = [
+        (isempty(pat) ? "()" : "(" * join(string.(pat), " ") * ")", w) for
+        (pat, w) in results
+    ]
     for (pat, w) in pairs
         add!(reg, into, "(pattern $pat $w)")
     end

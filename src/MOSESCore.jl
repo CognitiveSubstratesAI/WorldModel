@@ -14,11 +14,13 @@ using MeTTaCore
 using MeTTaCore.Eval
 using MeTTaCore.Eval.StandardMeTTa
 
-const _ORDER = split("utilities instance map multimap tree knob logical_canonize rte_helpers " *
+const _ORDER = split(
+    "utilities instance map multimap tree knob logical_canonize rte_helpers " *
     "propagate_not gather_junctors cut_unnecessary_or cut_unnecessary_and promote_common_constraints " *
     "subsumption complement_subtraction delete_inconsistent_handle reduce_to_elegance lsk logical_probe " *
     "sample_logical_perms add_logical_knobs build_logical build_knobs knob_mapper append_to " *
-    "representation get_candidate deme scoring optimization metapopulation run_moses")
+    "representation get_candidate deme scoring optimization metapopulation run_moses"
+)
 
 const _SPACE = Ref{Any}(nothing)
 function _space()
@@ -33,7 +35,8 @@ function _space()
     end
     _SPACE[]::Space
 end
-_eval1(e) = (r = metta_run(parse_program(e)[1][2], _space()); isempty(r) ? nothing : string(r[1]))
+_eval1(e) =
+    (r=metta_run(parse_program(e)[1][2], _space()); isempty(r) ? nothing : string(r[1]))
 
 """
     score_on_table(program, inputs, table) -> Float64
@@ -42,7 +45,9 @@ Truth-table BEHAVIORAL score of a MOSES program tree against `table` over `input
 `seedPool` — the REAL fitness (program semantics vs a target truth table). WorldModel's GA scores token
 lists with an opaque caller function and has no program/table semantics at all. Lower = more errors.
 """
-function score_on_table(program::AbstractString, inputs::AbstractString, table::AbstractString)
+function score_on_table(
+    program::AbstractString, inputs::AbstractString, table::AbstractString
+)
     s = _eval1("(seedPool $program $inputs $table)")
     s === nothing && return nothing
     m = match(r"(-?\d+(?:\.\d+)?)\)+\s*$", strip(s))

@@ -65,7 +65,9 @@ forgot it would write the same value, `motives`' ordering would degrade back to 
 the trie-order bug above would return silently — with the schema now *claiming* to be time-ordered.
 Pass the loop tick (`loop.tick`) or the wall clock, whichever the caller's other writes use.
 """
-set_motive!(reg::SpaceRegistry, id::AbstractString, u::Real, t::Real; into::Symbol=:Smotive) =
+set_motive!(
+    reg::SpaceRegistry, id::AbstractString, u::Real, t::Real; into::Symbol=:Smotive
+) =
     add!(reg, into, "(motive $id $(clamp(float(u), 0.0, 1.0)) $(float(t)))")
 
 """
@@ -79,7 +81,8 @@ chosen `(id, urgency)`, or `nothing` if there are no motives.
 `t` stamps this governance step — see `set_motive!` for why it is required rather than defaulted. One
 step writes one row per stimulated motive, all at the same `t`; the read side breaks that tie on urgency.
 """
-function govern!(reg::SpaceRegistry, stimulus::AbstractDict{<:AbstractString, <:Real}, t::Real;
+function govern!(reg::SpaceRegistry, stimulus::AbstractDict{<:AbstractString, <:Real},
+    t::Real;
     max_drift::Real=0.2, into::Symbol=:Smotive)
     cur = motives(reg; into=into)
     for (id, delta) in stimulus

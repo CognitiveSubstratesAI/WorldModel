@@ -7,7 +7,8 @@
 
 module Dense
 
-using FabricPC: graph, Linear, Edge, predict, initialize_params, TaskMap, InferenceSGD,
+using FabricPC:
+    graph, Linear, Edge, predict, initialize_params, TaskMap, InferenceSGD,
     train_pcn, AdamW
 using Random: AbstractRNG, default_rng
 
@@ -85,7 +86,8 @@ function train_dense!(ds::DenseStore, X::AbstractMatrix{<:Real}, Y::AbstractMatr
     hidden::Int=64, lr::Real=0.01, epochs::Real=100, adam::Bool=false,
     rng::AbstractRNG=default_rng())
     size(X, 1) == size(Y, 1) || error(
-        "train_dense!: X and Y must have equal batch rows, got $(size(X,1)) vs $(size(Y,1))")
+        "train_dense!: X and Y must have equal batch rows, got $(size(X,1)) vs $(size(Y,1))"
+    )
     ds.model === nothing && attach_predictor!(ds, size(X, 2), hidden, size(Y, 2); rng=rng)
     params, structure = ds.model
     loader = [Dict("x" => Matrix{Float32}(X), "y" => Matrix{Float32}(Y))]

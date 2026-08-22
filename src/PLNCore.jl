@@ -42,8 +42,12 @@ function _space()
         load_metta!(sp, read(joinpath(libpln, "base_rate.metta"), String))   # BaseRateTv on canonical Truth_w2c
         load_metta!(sp, read(joinpath(libpln, "decay.metta"), String))       # R10 decay law + rate
         _register_wm_ops!()
-        load_metta!(sp, read(joinpath(@__DIR__, "..", "lib", "base_rate_refresh.metta"), String))
-        load_metta!(sp, read(joinpath(@__DIR__, "..", "lib", "ambient_policy.metta"), String))
+        load_metta!(
+            sp, read(joinpath(@__DIR__, "..", "lib", "base_rate_refresh.metta"), String)
+        )
+        load_metta!(
+            sp, read(joinpath(@__DIR__, "..", "lib", "ambient_policy.metta"), String)
+        )
         _SPACE[] = sp
     end
     _SPACE[]::Space
@@ -58,11 +62,16 @@ const _REGS = Dict{String, SpaceRegistry}()
 const _REG_CTR = Ref(0)
 
 "Register `reg` behind a short handle token the MeTTa driver can pass around."
-wm_handle!(reg::SpaceRegistry) = (h = "wm$(_REG_CTR[] += 1)"; _REGS[h] = reg; h)
+wm_handle!(reg::SpaceRegistry) = (h="wm$(_REG_CTR[] += 1)"; _REGS[h]=reg; h)
 wm_release!(h::AbstractString) = (delete!(_REGS, h); nothing)
 
 _astr(a) = (a isa _S.Grounded && a.value isa AbstractString) ? String(a.value) : string(a)
-_anum(a) = (a isa _S.Grounded && a.value isa Real) ? Float64(a.value) : something(tryparse(Float64, string(a)), 0.0)
+_anum(a) =
+    if (a isa _S.Grounded && a.value isa Real)
+        Float64(a.value)
+    else
+        something(tryparse(Float64, string(a)), 0.0)
+    end
 _gnum(x::Real) = _I.ExecOk(_S.Atom[_S.Grounded(Float64(x))])
 _gunit() = _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[])])
 
@@ -82,72 +91,140 @@ end
 function _register_wm_ops!()
     R = _I.TOKEN_REGISTRY
 
-    R["wm-universe"] = _S.Grounded(_I.Operation("wm-universe", function (xs::Vector{_S.Atom})
-        length(xs) == 3 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing); reg === nothing && return _gnum(0)
-        head = _astr(xs[3])
-        _gnum(count(a -> _class_of(a, head) !== nothing, query_head(reg, Symbol(_astr(xs[2])), head)))
-    end))
+    R["wm-universe"] = _S.Grounded(
+        _I.Operation(
+            "wm-universe",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 3 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _gnum(0)
+                head = _astr(xs[3])
+                _gnum(
+                    count(
+                        a -> _class_of(a, head) !== nothing,
+                        query_head(reg, Symbol(_astr(xs[2])), head)
+                    )
+                )
+            end
+        )
+    )
 
-    R["wm-class-count"] = _S.Grounded(_I.Operation("wm-class-count", function (xs::Vector{_S.Atom})
-        length(xs) == 4 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing); reg === nothing && return _gnum(0)
-        head = _astr(xs[3]); cls = _astr(xs[4])
-        _gnum(count(a -> _class_of(a, head) == cls, query_head(reg, Symbol(_astr(xs[2])), head)))
-    end))
+    R["wm-class-count"] = _S.Grounded(
+        _I.Operation(
+            "wm-class-count",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 4 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _gnum(0)
+                head = _astr(xs[3])
+                cls = _astr(xs[4])
+                _gnum(
+                    count(
+                        a -> _class_of(a, head) == cls,
+                        query_head(reg, Symbol(_astr(xs[2])), head)
+                    )
+                )
+            end
+        )
+    )
 
-    R["wm-classes"] = _S.Grounded(_I.Operation("wm-classes", function (xs::Vector{_S.Atom})
-        length(xs) == 4 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing); reg === nothing && return _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[])])
-        head = _astr(xs[3]); lim = max(round(Int, _anum(xs[4])), 0)
-        cls = sort!(unique(String[c for c in (_class_of(a, head)
-                                              for a in query_head(reg, Symbol(_astr(xs[2])), head))
-                                  if c !== nothing]))                   # sorted ⇒ deterministic
-        _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[_S.Sym(c) for c in Iterators.take(cls, lim)])])
-    end))
+    R["wm-classes"] = _S.Grounded(
+        _I.Operation(
+            "wm-classes",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 4 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[])])
+                head = _astr(xs[3])
+                lim = max(round(Int, _anum(xs[4])), 0)
+                cls = sort!(
+                    unique(
+                        String[
+                            c for c in (
+                                _class_of(a, head)
+                                for a in query_head(reg, Symbol(_astr(xs[2])), head)
+                            )
+                            if c !== nothing
+                        ]
+                    )
+                )                   # sorted ⇒ deterministic
+                _I.ExecOk(
+                    _S.Atom[_S.Expression(
+                        _S.Atom[_S.Sym(c) for c in Iterators.take(cls, lim)]
+                    )]
+                )
+            end
+        )
+    )
 
-    R["wm-put-belief!"] = _S.Grounded(_I.Operation("wm-put-belief!", function (xs::Vector{_S.Atom})
-        length(xs) == 6 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing); reg === nothing && return _gunit()
-        assert_belief!(reg, _astr(xs[3]), _anum(xs[4]), _anum(xs[5]), _anum(xs[6]);
-                       into=Symbol(_astr(xs[2])))
-        _gunit()
-    end))
+    R["wm-put-belief!"] = _S.Grounded(
+        _I.Operation(
+            "wm-put-belief!",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 6 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _gunit()
+                assert_belief!(reg, _astr(xs[3]), _anum(xs[4]), _anum(xs[5]), _anum(xs[6]);
+                    into=Symbol(_astr(xs[2])))
+                _gunit()
+            end
+        )
+    )
 
     # ── R10 ambient re-validation accessors ───────────────────────────────────────────────────────
     # `(row key c0 t0)` per CURRENT belief — resolved by `beliefs`, so latest-wins is applied ONCE, in
     # the one place that knows the resolution rule. The decay law, the staleness threshold and the
     # priority are all applied on the MeTTa side (WorldModel/lib/ambient_policy.metta); this hands over
     # rows and nothing else.
-    R["wm-belief-rows"] = _S.Grounded(_I.Operation("wm-belief-rows", function (xs::Vector{_S.Atom})
-        length(xs) == 2 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing)
-        reg === nothing && return _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[])])
-        rows = _S.Atom[_S.Expression(_S.Atom[_S.Sym("row"), _S.Sym(k),
-                                             _S.Grounded(c), _S.Grounded(t0)])
-                       for (k, _s, c, t0) in beliefs(reg; into=Symbol(_astr(xs[2])))]
-        _I.ExecOk(_S.Atom[_S.Expression(rows)])
-    end))
+    R["wm-belief-rows"] = _S.Grounded(
+        _I.Operation(
+            "wm-belief-rows",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 2 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _I.ExecOk(_S.Atom[_S.Expression(_S.Atom[])])
+                rows = _S.Atom[
+                    _S.Expression(
+                        _S.Atom[_S.Sym("row"), _S.Sym(k),
+                            _S.Grounded(c), _S.Grounded(t0)]
+                    )
+                    for (k, _s, c, t0) in beliefs(reg; into=Symbol(_astr(xs[2])))
+                ]
+                _I.ExecOk(_S.Atom[_S.Expression(rows)])
+            end
+        )
+    )
 
     # How much evidence still anchors `key` — the count `EvidenceConfidence` consumes.
-    R["wm-evidence-count"] = _S.Grounded(_I.Operation("wm-evidence-count", function (xs::Vector{_S.Atom})
-        length(xs) == 3 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing); reg === nothing && return _gnum(0)
-        _gnum(length(evidence_of(reg, _astr(xs[3]); into=Symbol(_astr(xs[2])))))
-    end))
+    R["wm-evidence-count"] = _S.Grounded(
+        _I.Operation(
+            "wm-evidence-count",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 3 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _gnum(0)
+                _gnum(length(evidence_of(reg, _astr(xs[3]); into=Symbol(_astr(xs[2])))))
+            end
+        )
+    )
 
     # Current strength of `key`, or the symbol `no-belief`. NOT 0.0 — absence is not a truth value, and
     # a fabricated zero is what silently poisoned PLN's `as > 0` precondition before.
-    R["wm-belief-strength"] = _S.Grounded(_I.Operation("wm-belief-strength", function (xs::Vector{_S.Atom})
-        length(xs) == 3 || return _I.ExecNoReduce()
-        reg = get(_REGS, _astr(xs[1]), nothing)
-        reg === nothing && return _I.ExecOk(_S.Atom[_S.Sym("no-belief")])
-        key = _astr(xs[3])
-        for (k, s, _c, _t) in beliefs(reg; into=Symbol(_astr(xs[2])))
-            k == key && return _gnum(s)
-        end
-        _I.ExecOk(_S.Atom[_S.Sym("no-belief")])
-    end))
+    R["wm-belief-strength"] = _S.Grounded(
+        _I.Operation(
+            "wm-belief-strength",
+            function (xs::Vector{_S.Atom})
+                length(xs) == 3 || return _I.ExecNoReduce()
+                reg = get(_REGS, _astr(xs[1]), nothing)
+                reg === nothing && return _I.ExecOk(_S.Atom[_S.Sym("no-belief")])
+                key = _astr(xs[3])
+                for (k, s, _c, _t) in beliefs(reg; into=Symbol(_astr(xs[2])))
+                    k == key && return _gnum(s)
+                end
+                _I.ExecOk(_S.Atom[_S.Sym("no-belief")])
+            end
+        )
+    )
 
     return nothing
 end
@@ -167,12 +244,14 @@ function refresh_base_rates!(reg::SpaceRegistry, t::Real;
     into_rule::Symbol=:Srule, limit::Int=64)
     h = wm_handle!(reg)
     try
-        metta_run(parse_program(
-            "(refresh-base-rates! \"$h\" $into $head $into_rule $(float(t)) $limit)")[1][2], _space())
+        metta_run(
+            parse_program(
+                "(refresh-base-rates! \"$h\" $into $head $into_rule $(float(t)) $limit)")[1][2], _space())
         # report what now has an extension — the rule wrote exactly these (absence is skipped)
         cls = String[]
         for a in query_head(reg, into, head)
-            c = _class_of(a, head); c === nothing || push!(cls, c)
+            c = _class_of(a, head)
+            c === nothing || push!(cls, c)
         end
         return sort!(unique(cls))
     finally
@@ -192,10 +271,13 @@ end
 "Evaluate a nullary MeTTa policy atom (e.g. `(revalidate-budget)`) to a number."
 function _policy_num(name::AbstractString)
     res = metta_run(parse_program("($name)")[1][2], _space())
-    isempty(res) && error("PLNCore: ambient policy atom `($name)` did not reduce to a value — " *
-                          "check WorldModel/lib/ambient_policy.metta")
+    isempty(res) && error(
+        "PLNCore: ambient policy atom `($name)` did not reduce to a value — " *
+        "check WorldModel/lib/ambient_policy.metta"
+    )
     v = tryparse(Float64, strip(string(res[1])))
-    v === nothing && error("PLNCore: ambient policy atom `($name)` reduced to `$(res[1])`, not a number")
+    v === nothing &&
+        error("PLNCore: ambient policy atom `($name)` reduced to `$(res[1])`, not a number")
     return v
 end
 
@@ -214,11 +296,15 @@ Effective confidence at time `t` under staleness decay (§6.1.3, R10) — evalua
 `(BeliefDecayRate)`. Both the curve and the rate are atoms: an evolutionary search over the agent's
 cognition can replace exponential decay with something else without a Julia edit.
 """
-function decayed_confidence(c0::Real, t0::Real, t::Real; lambda::Union{Real,Nothing}=nothing)
+function decayed_confidence(
+    c0::Real, t0::Real, t::Real; lambda::Union{Real, Nothing}=nothing
+)
     λ = lambda === nothing ? "(BeliefDecayRate)" : string(float(lambda))
-    res = metta_run(parse_program(
-        "(DecayedConfidence $(float(c0)) $(float(t0)) $(float(t)) $λ)")[1][2], _space())
-    isempty(res) && error("PLNCore: DecayedConfidence did not reduce — check Core/lib/pln/decay.metta")
+    res = metta_run(
+        parse_program(
+            "(DecayedConfidence $(float(c0)) $(float(t0)) $(float(t)) $λ)")[1][2], _space())
+    isempty(res) &&
+        error("PLNCore: DecayedConfidence did not reduce — check Core/lib/pln/decay.metta")
     return parse(Float64, strip(string(res[1])))
 end
 
@@ -240,13 +326,15 @@ function stale_candidates(reg::SpaceRegistry, t::Real; into::Symbol=:Srule)
     h = wm_handle!(reg)
     try
         res = metta_run(parse_program(
-            "(stale-candidates \"$h\" $into $(float(t)))")[1][2], _space())
+                "(stale-candidates \"$h\" $into $(float(t)))")[1][2], _space())
         out = Tuple{String, Float64}[]
-        for m in eachmatch(r"\(cand\s+(\S+?)\s+([-\d.eE]+)\)", isempty(res) ? "" : string(res[1]))
+        for m in eachmatch(
+            r"\(cand\s+(\S+?)\s+([-\d.eE]+)\)", isempty(res) ? "" : string(res[1])
+        )
             push!(out, (String(m.captures[1]), parse(Float64, m.captures[2])))
         end
         # most-decayed first; key as a deterministic tie-break so equal-priority ties don't wobble
-        sort!(out; by = x -> (-x[2], x[1]))
+        sort!(out; by=x -> (-x[2], x[1]))
         return out
     finally
         wm_release!(h)
@@ -278,14 +366,17 @@ function revalidate_belief!(reg::SpaceRegistry, key::AbstractString, t::Real;
     into::Symbol=:Srule, evidence_into::Symbol=:Sent)
     h = wm_handle!(reg)
     try
-        res = metta_run(parse_program(
-            "(revalidate-one! \"$h\" $into $evidence_into $(float(t)) $key)")[1][2], _space())
+        res = metta_run(
+            parse_program(
+                "(revalidate-one! \"$h\" $into $evidence_into $(float(t)) $key)")[1][2], _space())
         isempty(res) && return nothing
         m = match(r"\(revalidated\s+(\S+?)\s+([-\d.eE]+)\)", string(res[1]))
         m === nothing && return nothing                     # `unsupported` / `absent` ⇒ left to decay
         c = parse(Float64, m.captures[2])
         s = nothing
-        for (k, sv, _c, _t) in beliefs(reg; into=into); k == key && (s = sv; break); end
+        for (k, sv, _c, _t) in beliefs(reg; into=into)
+            k == key && (s=sv; break)
+        end
         s === nothing && return nothing
         return (key=String(key), s=s, c=c, t=float(t))
     finally
@@ -314,7 +405,8 @@ function ambient_revalidate!(reg::SpaceRegistry, t::Real; into::Symbol=:Srule,
     for (key, _p) in cands
         length(revalidated) >= max(budget, 0) && break
         examined += 1
-        revalidate_belief!(reg, key, t; into=into, evidence_into=evidence_into) === nothing ||
+        revalidate_belief!(reg, key, t; into=into, evidence_into=evidence_into) ===
+        nothing ||
             push!(revalidated, key)
     end
     return (; stale=first.(cands), revalidated=revalidated, examined=examined)
@@ -327,7 +419,11 @@ function _eval_stv(expr::AbstractString)
     res = metta_run(parse_program(expr)[1][2], _space())
     isempty(res) && return nothing
     m = match(r"\(stv\s+([-\d.eE]+)\s+([-\d.eE]+)\)", string(res[1]))
-    m === nothing ? nothing : (s = parse(Float64, m.captures[1]), c = parse(Float64, m.captures[2]))::STV
+    if m === nothing
+        nothing
+    else
+        (s=parse(Float64, m.captures[1]), c=parse(Float64, m.captures[2]))::STV
+    end
 end
 
 """
@@ -338,7 +434,9 @@ replacing PLN.jl's Julia re-implementation. Same five-STV interface; returns the
 (including its `(stv 1 0)` ignorance fallback when the consistency preconditions fail).
 """
 truth_deduction(P::STV, Q::STV, R::STV, PQ::STV, QR::STV) =
-    _eval_stv("(Truth_Deduction $(_stv_str(P)) $(_stv_str(Q)) $(_stv_str(R)) $(_stv_str(PQ)) $(_stv_str(QR)))")
+    _eval_stv(
+        "(Truth_Deduction $(_stv_str(P)) $(_stv_str(Q)) $(_stv_str(R)) $(_stv_str(PQ)) $(_stv_str(QR)))"
+    )
 
 """
     select_action(reg, goal; into=:Srule) -> Vector{Tuple{String,Float64}}
@@ -348,9 +446,9 @@ Canonical action-selection over Srule, best-first. Beyond the 1-hop `X ⇒ goal`
 canonical lib/pln deduction (`truth_deduction`) — multi-hop inference the shallow stand-in cannot do.
 This is the canonical formula on the LIVE goal-loop path (mid_step!), not just available.
 """
-function select_action(reg::SpaceRegistry, goal::AbstractString; into::Symbol = :Srule)
+function select_action(reg::SpaceRegistry, goal::AbstractString; into::Symbol=:Srule)
     impls = Tuple{String, String, Float64, Float64}[]            # (a, b, s, c) for each a ⇒ b
-    for (k, s, c, _t) in beliefs(reg; into = into)
+    for (k, s, c, _t) in beliefs(reg; into=into)
         parts = split(String(k), "=>")
         length(parts) == 2 || continue
         push!(impls, (String(parts[1]), String(parts[2]), s, c))
@@ -369,13 +467,15 @@ function select_action(reg::SpaceRegistry, goal::AbstractString; into::Symbol = 
             # the (s=1,c=0) fallback and inserted every 2-hop candidate at a flat 0.0 — no ranking signal,
             # yet selectable when no 1-hop candidate existed.) Skipping BEFORE truth_deduction also drops
             # a parse+metta_run+regex round-trip per pair, which was pure waste on the live mid_step! path.
-            P = node_stv(reg, a; into); Q = node_stv(reg, b; into); R = node_stv(reg, goal; into)
+            P = node_stv(reg, a; into)
+            Q = node_stv(reg, b; into)
+            R = node_stv(reg, goal; into)
             (P === nothing || Q === nothing || R === nothing) && continue
-            tv = truth_deduction(P, Q, R, (s = sab, c = cab), (s = sbg, c = cbg))
+            tv = truth_deduction(P, Q, R, (s=sab, c=cab), (s=sbg, c=cbg))
             tv === nothing || bump!(a, tv.s * tv.c)
         end
     end
-    out = sort!(collect(score); by = x -> -x[2])
+    out = sort!(collect(score); by=x -> -x[2])
     return [(id, v) for (id, v) in out]
 end
 

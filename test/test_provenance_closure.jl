@@ -22,11 +22,11 @@
 using WorldModel, Test
 
 @testset "v5 §5.4(3,6) — provenance closure survives nothing it should not" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
 
     # ── an intact chain: evidence -> claim -> back to evidence ────────────────────────────────────
-    cid = store_evidence!(reg, "saw-a-tree-at-dusk"; modality = "vision")
+    cid = store_evidence!(reg, "saw-a-tree-at-dusk"; modality="vision")
     ground!(reg, "t1", "(entity t1 tree)", cid)
 
     @test evidence_of(reg, "t1") == [cid]              # the claim points at its evidence
@@ -34,7 +34,7 @@ using WorldModel, Test
     @test isempty(provenance_closure(reg))             # v5(3): nothing dangling
 
     # ── a SECOND claim on separate evidence, to prove the detector is specific ───────────────────
-    cid2 = store_evidence!(reg, "heard-a-bird"; modality = "audio")
+    cid2 = store_evidence!(reg, "heard-a-bird"; modality="audio")
     ground!(reg, "b1", "(entity b1 bird)", cid2)
     @test isempty(provenance_closure(reg))
 
@@ -64,7 +64,7 @@ using WorldModel, Test
     # Re-perception (R2): the same payload yields the SAME content id, so restoring the shard must
     # heal the closure with no change to the claim. This also pins that `content_id` is genuinely
     # content-addressed rather than positional.
-    cid_again = store_evidence!(reg, "saw-a-tree-at-dusk"; modality = "vision")
+    cid_again = store_evidence!(reg, "saw-a-tree-at-dusk"; modality="vision")
     @test cid_again == cid                             # content-addressed, not a fresh id
     @test isempty(provenance_closure(reg))             # the hole is closed
 end

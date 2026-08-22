@@ -27,15 +27,17 @@ function _space()
 end
 
 _vec(dn) = "(" * join(string.(dn), " ") * ")"
-_eval1(expr) = (r = metta_run(parse_program(expr)[1][2], _space()); isempty(r) ? nothing : string(r[1]))
-_num(expr) = (s = _eval1(expr); s === nothing ? nothing : tryparse(Float64, s))
-_bool(expr) = (s = _eval1(expr); s === nothing ? nothing : s == "True")
+_eval1(expr) =
+    (r=metta_run(parse_program(expr)[1][2], _space()); isempty(r) ? nothing : string(r[1]))
+_num(expr) = (s=_eval1(expr); s === nothing ? nothing : tryparse(Float64, s))
+_bool(expr) = (s=_eval1(expr); s === nothing ? nothing : s == "True")
 
 "CDS simplex margin via canonical lib/subrep (`cds-margin-simplex`): Δr + min_i(Δn_i)."
-cds_margin(dr::Real, dn::AbstractVector{<:Real}) = _num("(cds-margin-simplex $dr $(_vec(dn)))")
+cds_margin(dr::Real, dn::AbstractVector{<:Real}) =
+    _num("(cds-margin-simplex $dr $(_vec(dn)))")
 
 "CDS admission via lib/subrep (`cds-admit`): margin ≥ ε."
-cds_admit(dr::Real, dn::AbstractVector{<:Real}, eps::Real = 0.0) =
+cds_admit(dr::Real, dn::AbstractVector{<:Real}, eps::Real=0.0) =
     _bool("(cds-admit (cds-margin-simplex $dr $(_vec(dn))) $eps)")
 
 """
@@ -53,12 +55,18 @@ pds_admit(dr::Real, dn::AbstractVector{<:Real}, eps::Real) =
 # capability SubRep.jl lacks, complementary options whose margin is within −ε (PDS).
 
 "Propose an option candidate `(Δr, Δn)` for ambient SubRep certification (staged in Sopt)."
-propose_option!(reg::SpaceRegistry, id::AbstractString, dr::Real, dn::AbstractVector{<:Real};
-    into::Symbol = :Sopt) = add!(reg, into, "(option-candidate $id $dr $(join(string.(dn), " ")))")
+propose_option!(reg::SpaceRegistry, id::AbstractString, dr::Real,
+    dn::AbstractVector{<:Real};
+    into::Symbol=:Sopt) = add!(reg, into, "(option-candidate $id $dr $(join(string.(dn), " ")))")
 
 _admitted_ids(reg, into) =
-    Set(String[t[2] for t in (split(strip(a)[2:(end - 1)]) for a in query_head(reg, into, "option"))
-               if length(t) >= 2 && t[1] == "option"])
+    Set(
+        String[
+            t[2] for
+            t in (split(strip(a)[2:(end - 1)]) for a in query_head(reg, into, "option"))
+            if length(t) >= 2 && t[1] == "option"
+        ]
+    )
 
 function _store_option!(reg, id, dr, dn, gate, into)
     add!(reg, into, "(option $id $dr $(join(string.(dn), " ")))")
@@ -73,9 +81,11 @@ Admit via CDS (margin ≥ 0, dominates the baseline) — else via PDS-ε (margin
 CDS rejects, the NEW capability) — else reject. Admitted options + their certificate (gate = CDS|PDS) are
 stored in Sopt. Idempotent: candidates already admitted are skipped. Returns the admitted/rejected ids.
 """
-function admit_proposed!(reg::SpaceRegistry; eps_pds::Real = 0.1, into::Symbol = :Sopt)
+function admit_proposed!(reg::SpaceRegistry; eps_pds::Real=0.1, into::Symbol=:Sopt)
     done = _admitted_ids(reg, into)
-    cds = String[]; pds = String[]; rej = String[]
+    cds = String[]
+    pds = String[]
+    rej = String[]
     for a in query_head(reg, into, "option-candidate")
         toks = split(strip(a)[2:(end - 1)])                 # ["option-candidate", id, dr, dn…]
         length(toks) >= 3 || continue
@@ -85,15 +95,17 @@ function admit_proposed!(reg::SpaceRegistry; eps_pds::Real = 0.1, into::Symbol =
         dn = [tryparse(Float64, t) for t in toks[4:end]]
         (dr === nothing || any(isnothing, dn)) && continue
         if cds_admit(dr, dn, 0.0)
-            _store_option!(reg, id, dr, dn, "CDS", into); push!(cds, id)
+            _store_option!(reg, id, dr, dn, "CDS", into)
+            push!(cds, id)
         elseif pds_admit(dr, dn, eps_pds)
-            _store_option!(reg, id, dr, dn, "PDS", into); push!(pds, id)
+            _store_option!(reg, id, dr, dn, "PDS", into)
+            push!(pds, id)
         else
             push!(rej, id)
         end
         push!(done, id)
     end
-    (; cds = cds, pds = pds, rejected = rej)
+    (; cds=cds, pds=pds, rejected=rej)
 end
 
 end # module SubRepCore

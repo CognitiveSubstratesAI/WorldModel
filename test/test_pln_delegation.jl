@@ -13,34 +13,36 @@ using WorldModel
 
 const PLN = WorldModel.PLN
 const PLNCore = WorldModel.PLNCore
-mk(s, c) = (s = s, c = c)
+mk(s, c) = (s=s, c=c)
 
 @testset "PLN delegation — WorldModel runs canonical lib/pln (bisimulation vs the Julia formula)" begin
     # (1) canonical doc example must come back through Core
-    lib = PLNCore.truth_deduction(mk(0.8, 0.9), mk(0.7, 0.85), mk(0.6, 0.8), mk(0.7, 0.9), mk(0.6, 0.85))
+    lib = PLNCore.truth_deduction(
+        mk(0.8, 0.9), mk(0.7, 0.85), mk(0.6, 0.8), mk(0.7, 0.9), mk(0.6, 0.85)
+    )
     @test lib !== nothing
-    @test isapprox(lib.s, 0.6; atol = 1e-3)
-    @test isapprox(lib.c, 0.3213; atol = 1e-3)
+    @test isapprox(lib.s, 0.6; atol=1e-3)
+    @test isapprox(lib.c, 0.3213; atol=1e-3)
 
     # (2) bisimulation sweep — faithful Julia formula ≡ lib/pln across random STVs (compute AND fallback)
     rng = MersenneTwister(20260622)
-    rstv() = mk(round(rand(rng); digits = 3), round(0.5 + 0.49 * rand(rng); digits = 3))
+    rstv() = mk(round(rand(rng); digits=3), round(0.5 + 0.49 * rand(rng); digits=3))
     agree = 0
     for _ in 1:80
         P, Q, R, PQ, QR = rstv(), rstv(), rstv(), rstv(), rstv()
         jl = PLN.truth_deduction(P, Q, R, PQ, QR)
         lb = PLNCore.truth_deduction(P, Q, R, PQ, QR)
         @test lb !== nothing
-        @test isapprox(jl.s, lb.s; atol = 2e-3)
-        @test isapprox(jl.c, lb.c; atol = 2e-3)
-        (isapprox(jl.s, lb.s; atol = 2e-3) && isapprox(jl.c, lb.c; atol = 2e-3)) && (agree += 1)
+        @test isapprox(jl.s, lb.s; atol=2e-3)
+        @test isapprox(jl.c, lb.c; atol=2e-3)
+        (isapprox(jl.s, lb.s; atol=2e-3) && isapprox(jl.c, lb.c; atol=2e-3)) && (agree += 1)
     end
     @test agree == 80
     @info "PLN delegation bisimulation: $agree/80 cases agree (Julia formula ≡ canonical lib/pln)"
 end
 
 @testset "PLN canonical multi-hop action-selection on the LIVE path (mid_step!)" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     # a 2-hop chain to the goal `axe`:  build ⇒ make_axe ⇒ axe  (node STVs chosen so the deduction
     # consistency preconditions pass → the transitive candidate scores > 0)
@@ -60,7 +62,7 @@ end
     # the live goal loop now selects via the canonical multi-hop selector
     loop = CognitiveLoop(reg)
     obs = Observation("f", "vision", "u", "(entity u x)", :e, Dict(:i => (:x, :u)))
-    rr = mid_step!(loop, obs; goal = "axe")
+    rr = mid_step!(loop, obs; goal="axe")
     @test rr.action !== nothing && rr.action[1] in core
     @info "PLN live-path: canonical multi-hop finds transitive `build` the 1-hop scan misses; mid_step! uses it"
 end
@@ -74,7 +76,8 @@ end
     # fabricated zero always failed the precondition, took the `(stv 1 0)` fallback, and every transitive
     # candidate scored `1.0 * 0.0 = 0.0` — inserted, tied, and meaningless. Nothing in production asserts
     # node STVs, so the *feature* was inert while the *tests* proved the mechanism.
-    reg = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(reg)
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
+    seed_world_model!(reg)
 
     # (a) the Julia layer reports absence AS absence — never a fabricated zero truth value
     @test WorldModel.node_stv(reg, "never-asserted") === nothing
@@ -105,7 +108,8 @@ end
 
     # (c) PRODUCTION SHAPE: a 2-hop chain with NO node STVs (exactly what assert_implication! leaves —
     #     it writes only `a=>b` keys). The transitive candidate must VANISH, not appear at a flat 0.0.
-    reg2 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(reg2)
+    reg2 = SpaceRegistry(manifest(; store=mktempdir()))
+    seed_world_model!(reg2)
     assert_implication!(reg2, "A", "B", 0.9, 0.9, 0.0)
     assert_implication!(reg2, "B", "goal", 0.9, 0.9, 0.0)
     sc = WorldModel.PLNCore.select_action(reg2, "goal")
@@ -117,7 +121,9 @@ end
     # (d) give the nodes base rates and the SAME chain now yields real discrimination — proving the skip
     #     removed noise rather than capability. (Hand-checked: s = 0.81 + 0.1·(0.7−0.54)/0.4 = 0.85,
     #     c = 0.9⁴ = 0.6561, s·c ≈ 0.5577.)
-    for (n, s) in (("A", 0.5), ("B", 0.6), ("goal", 0.7)); assert_belief!(reg2, n, s, 0.9, 0.0); end
+    for (n, s) in (("A", 0.5), ("B", 0.6), ("goal", 0.7))
+        assert_belief!(reg2, n, s, 0.9, 0.0)
+    end
     sc2 = WorldModel.PLNCore.select_action(reg2, "goal")
     @test "A" in [a[1] for a in sc2]                  # transitive candidate is back…
     @test all(v -> v > 0.0, [a[2] for a in sc2])      # …and every score is meaningful

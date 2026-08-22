@@ -59,7 +59,9 @@ would never have produced.
 Callers doing LOGIC must skip on `nothing`. A caller that genuinely wants a numeric default states it
 at the call site (`v === nothing ? 0.0 : v.s`) so the fabrication is visible there, not hidden here.
 """
-function node_stv(reg::SpaceRegistry, name::AbstractString; into::Symbol=:Srule)::Union{STV,Nothing}
+function node_stv(
+    reg::SpaceRegistry, name::AbstractString; into::Symbol=:Srule
+)::Union{STV, Nothing}
     for (k, s, c, _t) in beliefs(reg; into=into)
         k == name && return (s=s, c=c)::STV
     end
@@ -98,8 +100,11 @@ function deduce(
 )
     # ABSENCE SKIPS. An unknown node or missing link means the deduction has NO PREMISES — not that it
     # is false. Feeding a fabricated (0,0) instead is exactly what used to force the (s=1,c=0) fallback.
-    P  = node_stv(reg, a; into); Q  = node_stv(reg, b; into); R = node_stv(reg, c; into)
-    PQ = impl_stv(reg, a, b; into); QR = impl_stv(reg, b, c; into)
+    P = node_stv(reg, a; into)
+    Q = node_stv(reg, b; into)
+    R = node_stv(reg, c; into)
+    PQ = impl_stv(reg, a, b; into)
+    QR = impl_stv(reg, b, c; into)
     any(x -> x === nothing, (P, Q, R, PQ, QR)) && return nothing
     return truth_deduction(P, Q, R, PQ, QR)
 end

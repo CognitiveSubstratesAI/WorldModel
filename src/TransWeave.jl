@@ -68,7 +68,7 @@ function bd_residual(reg::SpaceRegistry, name::AbstractString, src_key::Abstract
     # NUMERIC residual, not a deduction, so an absent side is deliberately read as strength 0.0 — the
     # default is stated HERE, at the call site, rather than fabricated inside the accessor where it
     # silently poisoned PLN deduction.
-    _strength(key) = (v = node_stv(reg, key; into=into_rule); v === nothing ? 0.0 : v.s)
+    _strength(key) = (v=node_stv(reg, key; into=into_rule); v === nothing ? 0.0 : v.s)
     return abs(_strength(src_key) - _strength(tgt_key))
 end
 

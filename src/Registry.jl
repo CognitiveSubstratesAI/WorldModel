@@ -13,7 +13,8 @@ using ..Dense
 
 export SpaceKind, SYMBOLIC, DENSE, HMH, WMSpace, SpaceRegistry
 export create_space!, delete_space!, has_space, list_spaces, space_kind
-export add!, remove!, atoms, count_atoms, query_head, persist!, store_dir, hmh_index, dense_store
+export add!,
+    remove!, atoms, count_atoms, query_head, persist!, store_dir, hmh_index, dense_store
 
 "Representational regime of a Space (§3.2/§4.2). SYMBOLIC = a MORK trie; DENSE/HMH bind later."
 @enum SpaceKind SYMBOLIC DENSE HMH

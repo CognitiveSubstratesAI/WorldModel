@@ -115,6 +115,7 @@ export add_correspondence!,
 # Loops — the two-loop × three-rate cognitive cycle over the braid (§3.1, §3.4)
 export CognitiveLoop, Observation, fast_step!, mid_step!, slow_step!, run_cycle!
 # Beliefs — truth values on the symbolic core; staleness/decay/re-validation (R10) via PLNCore→MeTTa
-export assert_belief!, beliefs, decayed_confidence, stale_beliefs, revalidate_belief!, ambient_revalidate!
+export assert_belief!,
+    beliefs, decayed_confidence, stale_beliefs, revalidate_belief!, ambient_revalidate!
 
 end # module WorldModel

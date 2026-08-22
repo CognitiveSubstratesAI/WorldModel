@@ -71,12 +71,17 @@ content_id(payload) = bytes2hex(sha256(codeunits(_canon_payload(payload))))[1:_C
 # length-prefixed canonical encoding (`len:bytes;`) — no field-boundary aliasing. Mirrors
 # `OmegaClaw/src/Gate.jl:22` `_canon`. A scalar payload is encoded as a single field.
 function _canon_payload(payload)::String
-    fields = payload isa AbstractVector || payload isa Tuple ? String[string(f) for f in payload] :
-                                                               String[string(payload)]
+    fields = if payload isa AbstractVector || payload isa Tuple
+        String[string(f) for f in payload]
+    else
+        String[string(payload)]
+    end
     io = IOBuffer()
     for f in fields
         b = codeunits(f)
-        print(io, length(b), ':'); write(io, b); print(io, ';')
+        print(io, length(b), ':')
+        write(io, b)
+        print(io, ';')
     end
     String(take!(io))
 end

@@ -21,7 +21,8 @@ const MOSESCore = WorldModel.MOSESCore
     @test MOSESCore.score_on_table("(mkTree (mkNode a) ())", "(a b)", OR) == -1.0
 
     # (2) the metapopulation search loop (runMoses base case) selects the best exemplar of the pool
-    @test MOSESCore.run_moses("0 0 5 (a b) $OR 3 6 ((mkXmplr A 0) (mkXmplr B -2))") == "(mkXmplr A 0)"
+    @test MOSESCore.run_moses("0 0 5 (a b) $OR 3 6 ((mkXmplr A 0) (mkXmplr B -2))") ==
+        "(mkXmplr A 0)"
 
     # WorldModel's MOSES.jl has NONE of the canonical machinery (token-list GA only)
     @test isdefined(MOSES, :synthesize!)                  # the GA toy it does have
@@ -31,7 +32,7 @@ const MOSESCore = WorldModel.MOSESCore
 end
 
 @testset "MOSES/GEO-EVO synthesis on the LIVE ambient path (slow_step!) — the unified mode toggle" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     prims = ["a", "b", "c", "d"]
     fitness(p) = ("a" in p) ? 1.0 : 0.0     # reward using primitive `a`
@@ -39,15 +40,17 @@ end
     loop = CognitiveLoop(reg)
 
     # MOSES mode — no backward subgoals: Score = F − γW, align ≡ 0 (forward-only)
-    sM = slow_step!(loop; t = 1.0,
-        synthesis = (fitness = fitness, weakness = weakness, primitives = prims, rng = MersenneTwister(1)))
+    sM = slow_step!(loop; t=1.0,
+        synthesis=(
+            fitness=fitness, weakness=weakness, primitives=prims, rng=MersenneTwister(1)
+        ))
     @test sM.synthesized !== nothing
     @test sM.synthesized[5] == 0.0          # align == 0 ⇒ MOSES (no two-ends coupling)
 
     # GEO-EVO mode — backward subgoal motif {c,d} + μ>0: the two-ends coupling pulls toward covering it
-    sG = slow_step!(loop; t = 2.0,
-        synthesis = (fitness = fitness, weakness = weakness, primitives = prims,
-            mu = 3.0, subgoals = [["c", "d"]], rng = MersenneTwister(2)))
+    sG = slow_step!(loop; t=2.0,
+        synthesis=(fitness=fitness, weakness=weakness, primitives=prims,
+            mu=3.0, subgoals=[["c", "d"]], rng=MersenneTwister(2)))
     @test sG.synthesized !== nothing
     @test sG.synthesized[5] > 0.0           # align > 0 ⇒ GEO-EVO two-ends engaged (program covers the subgoal)
     @test !isempty(programs(reg))           # synthesized program stored in the REAL Sprog
@@ -55,16 +58,16 @@ end
 end
 
 @testset "GEO-EVO on the CANONICAL geometric engine (geo_step!) — live on slow_step!" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     prims = ["a", "b", "c", "d"]
     fitness(p) = length(intersect(Set(p), Set(["c", "d"]))) / 2.0   # reward covering the backward subgoal {c,d}
     loop = CognitiveLoop(reg)
 
     # engine=:geometric ⇒ MorkSupercompiler geo_step! (DAGStore demes + EDA + backward motif field), per spec
-    sG = slow_step!(loop; t = 1.0,
-        synthesis = (fitness = fitness, weakness = (p) -> 0.0, primitives = prims,
-            engine = :geometric, subgoals = [["c", "d"]], goal = :G, rng = MersenneTwister(7)))
+    sG = slow_step!(loop; t=1.0,
+        synthesis=(fitness=fitness, weakness=(p) -> 0.0, primitives=prims,
+            engine=:geometric, subgoals=[["c", "d"]], goal=:G, rng=MersenneTwister(7)))
     @test sG.synthesized !== nothing
     best, align = sG.synthesized
     @test align > 0.0                       # the geodesic two-ends coupling drove the demes toward {c,d}
@@ -73,17 +76,17 @@ end
 end
 
 @testset "GEO-EVO §7 recombination — multi-op program covers the FULL subgoal (slow_step!)" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     prims = ["a", "b", "c", "d"]
     fitness(p) = length(intersect(Set(p), Set(["c", "d"]))) / 2.0   # coverage of the subgoal {c,d}
     loop = CognitiveLoop(reg)
 
     # engine=:geometric + recombine=true ⇒ geo_evolve_blocks! assembles building blocks into a full coverer
-    sR = slow_step!(loop; t = 1.0,
-        synthesis = (fitness = fitness, weakness = (p) -> 0.0, primitives = prims,
-            engine = :geometric, recombine = true, subgoals = [["c", "d"]], goal = :G,
-            rng = MersenneTwister(11)))
+    sR = slow_step!(loop; t=1.0,
+        synthesis=(fitness=fitness, weakness=(p) -> 0.0, primitives=prims,
+            engine=:geometric, recombine=true, subgoals=[["c", "d"]], goal=:G,
+            rng=MersenneTwister(11)))
     best, cov = sR.synthesized
     @test cov ≈ 1.0                          # the FULL motif {c,d} is covered (§7 blocks recombined)
     @test Set(["c", "d"]) ⊆ Set(best)        # the program is MULTI-OP, covering BOTH subgoal ops

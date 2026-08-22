@@ -80,15 +80,17 @@ using WorldModel: space_kind
         # THE REGRESSION: no collisions across a corpus far larger than the old 32-bit birthday bound
         # (~65k). The old scheme was expected to collide here; SHA-256 must not.
         let n = 200_000, seen = Set{String}()
-            for i in 1:n; push!(seen, content_id("obs$i")); end
+            for i in 1:n
+                push!(seen, content_id("obs$i"))
+            end
             @test length(seen) == n
         end
 
         # and distinct shards stay distinguishable end-to-end through the store
-        let r = SpaceRegistry(manifest(; store = mktempdir()))
+        let r = SpaceRegistry(manifest(; store=mktempdir()))
             seed_world_model!(r)
-            a = store_evidence!(r, "saw-a-tree";  modality = "vision")
-            b = store_evidence!(r, "saw-a-rock";  modality = "vision")
+            a = store_evidence!(r, "saw-a-tree"; modality="vision")
+            b = store_evidence!(r, "saw-a-rock"; modality="vision")
             @test a != b
             @test !isempty(fetch_evidence(r, a)) && !isempty(fetch_evidence(r, b))
             @test fetch_evidence(r, a) != fetch_evidence(r, b)
@@ -152,11 +154,12 @@ using WorldModel: space_kind
         # Until now `stale` was DETECTION-ONLY: slow_step! computed it and returned it, and the only
         # reference to `.stale` in the whole codebase was that return — so §7's "factor-graph PLN
         # tightens beliefs" never tightened anything. A decayed belief stayed decayed forever.
-        r2 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r2)
+        r2 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r2)
         # `supported` is anchored by two evidence shards; `orphan` is believed but nothing supports it.
-        c1 = store_evidence!(r2, "saw-a-tree"; modality = "vision")
+        c1 = store_evidence!(r2, "saw-a-tree"; modality="vision")
         ground!(r2, "supported", "(entity supported tree)", c1)
-        c2 = store_evidence!(r2, "saw-it-again"; modality = "vision")
+        c2 = store_evidence!(r2, "saw-it-again"; modality="vision")
         ground!(r2, "supported", "(entity supported tree)", c2)
         assert_belief!(r2, "supported", 0.8, 0.9, 0.0)
         assert_belief!(r2, "orphan", 0.8, 0.9, 0.0)
@@ -167,17 +170,17 @@ using WorldModel: space_kind
         # `orphan` is UNRESCUABLE but still REPORTED: detection and spending are separate concerns, and
         # "this belief decayed and nothing can rescue it" is a fact the caller wants.
 
-        res = slow_step!(CognitiveLoop(r2); t = t)
+        res = slow_step!(CognitiveLoop(r2); t=t)
         @test "supported" in res.revalidated            # evidence survives ⇒ refreshed…
         @test !("orphan" in res.revalidated)            # …no evidence ⇒ left to decay, NOT propped up
 
         # confidence came from the EVIDENCE COUNT through our canonical map (k=1): 2 shards ⇒ 2/(2+1)
         cs = Dict(k => c for (k, _s, c, _t) in beliefs(r2))
-        @test isapprox(cs["supported"], 2 / 3; atol = 1e-9)
-        @test isapprox(cs["orphan"], 0.9; atol = 1e-9)  # untouched
+        @test isapprox(cs["supported"], 2 / 3; atol=1e-9)
+        @test isapprox(cs["orphan"], 0.9; atol=1e-9)  # untouched
         # strength is PRESERVED — revalidation refreshes confidence, it does not invent belief
         ss = Dict(k => s for (k, s, _c, _t) in beliefs(r2))
-        @test isapprox(ss["supported"], 0.8; atol = 1e-9)
+        @test isapprox(ss["supported"], 0.8; atol=1e-9)
 
         # and the loop actually CLOSES: the refreshed key is no longer stale at the same `t`
         after = stale_beliefs(r2, t)
@@ -189,13 +192,14 @@ using WorldModel: space_kind
         # ordered FIRST (it decayed from the same c₀ and was never refreshed, so it is the more urgent
         # of the two), the anchored key must STILL be reached. Under the old loop — `take(stale, 1)`
         # over a key-sorted list — "orphan" alone filled the budget on every pass, forever.
-        r3 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r3)
-        c3 = store_evidence!(r3, "still-here"; modality = "vision")
+        r3 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r3)
+        c3 = store_evidence!(r3, "still-here"; modality="vision")
         ground!(r3, "zzz_anchored", "(entity zzz_anchored tree)", c3)
         for key in ("aaa_orphan1", "aaa_orphan2", "zzz_anchored")
             assert_belief!(r3, key, 0.8, 0.9, 0.0)
         end
-        amb = WorldModel.ambient_revalidate!(r3, t; budget = 1)
+        amb = WorldModel.ambient_revalidate!(r3, t; budget=1)
         @test amb.revalidated == ["zzz_anchored"]       # the one rescuable key, despite sorting last
         @test length(amb.stale) == 3                    # …while all three are still REPORTED as stale
         @test amb.examined == 3                         # and the pass says how far it had to walk
@@ -207,9 +211,11 @@ using WorldModel: space_kind
         # ground!(entity …) as mid_step! does → slow_step! computes extensional base rates → deduction
         # has premises. Deliberately NOT hand-asserting node beliefs: doing that is what let the earlier
         # 2-hop test pass over a dead mechanism.
-        r3 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r3)
-        for (i, ty) in enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
-            cid = store_evidence!(r3, "obs$i"; modality = "vision")
+        r3 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r3)
+        for (i, ty) in
+            enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
+            cid = store_evidence!(r3, "obs$i"; modality="vision")
             ground!(r3, "e$i", "(entity e$i $ty)", cid)
         end
         # tree ⇒ shade ⇒ comfort  (all three are PERCEIVED concepts, so all three get base rates).
@@ -223,13 +229,13 @@ using WorldModel: space_kind
         pre = WorldModel.PLNCore.select_action(r3, "comfort")
         @test !any(a -> a[1] == "tree", pre)            # ⇒ the 2-hop candidate is (correctly) skipped
 
-        res = slow_step!(CognitiveLoop(r3); t = 1.0)
+        res = slow_step!(CognitiveLoop(r3); t=1.0)
         @test "tree" in res.base_rates && "shade" in res.base_rates
 
         br = node_stv(r3, "tree")
         @test br !== nothing
-        @test isapprox(br.s, 3 / 7; atol = 1e-9)        # 3 trees out of a 7-entity universe
-        @test isapprox(br.c, 3 / 4; atol = 1e-9)        # canonical Truth_w2c(3) = 3/(3+1), k = 1
+        @test isapprox(br.s, 3 / 7; atol=1e-9)        # 3 trees out of a 7-entity universe
+        @test isapprox(br.c, 3 / 4; atol=1e-9)        # canonical Truth_w2c(3) = 3/(3+1), k = 1
 
         post = WorldModel.PLNCore.select_action(r3, "comfort")
         tree = findfirst(a -> a[1] == "tree", post)
@@ -241,14 +247,16 @@ using WorldModel: space_kind
         # link strength (P(shade|tree)=0.9 > P(shade)/P(tree)=2/3) is rejected by `_consistent`, takes the
         # (s=1,c=0) fallback and contributes 0.0. Before base rates existed EVERY deduction failed the
         # guard trivially (as=0), so it discriminated nothing; now it separates possible from impossible.
-        r4 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r4)
-        for (i, ty) in enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
-            cid = store_evidence!(r4, "obs$i"; modality = "vision")
+        r4 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r4)
+        for (i, ty) in
+            enumerate(["tree", "tree", "tree", "shade", "shade", "comfort", "rock"])
+            cid = store_evidence!(r4, "obs$i"; modality="vision")
             ground!(r4, "e$i", "(entity e$i $ty)", cid)
         end
         assert_implication!(r4, "tree", "shade", 0.9, 0.9, 0.0)     # impossible given the base rates
         assert_implication!(r4, "shade", "comfort", 0.45, 0.9, 0.0)
-        slow_step!(CognitiveLoop(r4); t = 1.0)
+        slow_step!(CognitiveLoop(r4); t=1.0)
         bad = WorldModel.PLNCore.select_action(r4, "comfort")
         ti = findfirst(a -> a[1] == "tree", bad)
         @test ti !== nothing && bad[ti][2] == 0.0       # inconsistent ⇒ contributes nothing
@@ -260,14 +268,16 @@ using WorldModel: space_kind
         # So action/goal symbols had no extension anywhere and could never get a base rate — meaning
         # 2-hop reasoning over the AGENT'S OWN action graph was structurally impossible, independent of
         # the perceptual base rates. This drives mid_step! for real and checks both.
-        r5 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r5)
+        r5 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r5)
         assert_implication!(r5, "chop", "wood", 0.5, 0.9, 0.0)      # chop ⇒ wood ⇒ shelter
         assert_implication!(r5, "wood", "shelter", 0.5, 0.9, 0.0)
         lp = CognitiveLoop(r5)
         for i in 1:4
-            obs = Observation("frame$i", "vision", "x$i", "(entity x$i log)", Symbol("ep", i),
+            obs = Observation("frame$i", "vision", "x$i", "(entity x$i log)",
+                Symbol("ep", i),
                 Dict(:item => (:thing, :log)))
-            mid_step!(lp, obs; goal = "shelter")
+            mid_step!(lp, obs; goal="shelter")
         end
         env = atoms(r5, :Senv)
         @test any(a -> startswith(a, "(goal "), env)                # goals pursued are recorded…
@@ -275,13 +285,13 @@ using WorldModel: space_kind
         @test any(a -> occursin("wood", a), env)                    # `wood` is the 1-hop pick for shelter
 
         @test node_stv(r5, "wood") === nothing                      # no prior for an ACTION symbol yet
-        res = slow_step!(lp; t = 1.0)
+        res = slow_step!(lp; t=1.0)
         @test "wood" in res.base_rates                              # now derived from Senv's action universe
         bw = node_stv(r5, "wood")
         @test bw !== nothing && bw.s > 0.0 && bw.c > 0.0
         # `shelter` was pursued every tick ⇒ it is the whole goal universe ⇒ base rate 1.0
         bs = node_stv(r5, "shelter")
-        @test bs !== nothing && isapprox(bs.s, 1.0; atol = 1e-9)
+        @test bs !== nothing && isapprox(bs.s, 1.0; atol=1e-9)
     end
 
     @testset "motive state is persisted to Smotive (what the agent WANTS is in the metagraph)" begin
@@ -289,25 +299,30 @@ using WorldModel: space_kind
         # ZERO production writers: `govern` appraised the modulators and mid_step! returned them, while
         # OmegaClaw carried the evolving affect state in a Julia struct field. So the agent's motivational
         # state was outside the metagraph — not inspectable, not evolvable, not .act-persisted.
-        r6 = SpaceRegistry(manifest(; store = mktempdir())); seed_world_model!(r6)
+        r6 = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(r6)
         assert_implication!(r6, "dig", "wood", 0.5, 0.9, 0.0)
         # governor shape per the canonical MetaMo fixture (test_metamo_delegation.jl:50-58):
         # 8 goals, 6 modulators (valence…securing), 4-channel stimulus, 8-wide candidate correlations.
-        gv = (goals = [0.25, 0.75, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-              mods = fill(0.5, 6),
-              stimulus = [0.8, 0.6, 0.1, 0.2],                # novelty, conduciveness, risk, effort
-              candidates = [(id = "wood", corrs = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], risk = 0.0,
-                             dg = [0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05])])
+        gv = (goals=[0.25, 0.75, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            mods=fill(0.5, 6),
+            stimulus=[0.8, 0.6, 0.1, 0.2],                # novelty, conduciveness, risk, effort
+            candidates=[(id="wood", corrs=[0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                risk=0.0,
+                dg=[0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05])])
         l6 = CognitiveLoop(r6)
         @test isempty(motives(r6))                            # nothing in Smotive before
-        obs = Observation("f", "vision", "u", "(entity u log)", :e1, Dict(:item => (:thing, :log)))
-        r = mid_step!(l6, obs; governor = gv)
+        obs = Observation(
+            "f", "vision", "u", "(entity u log)", :e1, Dict(:item => (:thing, :log))
+        )
+        r = mid_step!(l6, obs; governor=gv)
         @test r.governance !== nothing && r.governance.chosen == "wood"
 
         ms = motives(r6)
         @test !isempty(ms)                                    # …and now the motive state IS in the space
         # stored under the CANONICAL OpenPsi names (lib/metamo/config.metta ModulatorIndex), not invented ids
-        for name in ("valence", "arousal", "approach", "resolution", "threshold", "securing")
+        for name in
+            ("valence", "arousal", "approach", "resolution", "threshold", "securing")
             @test haskey(ms, name)
             @test 0.0 <= ms[name] <= 1.0                      # set_motive! projects to the safe region
         end
@@ -317,19 +332,22 @@ using WorldModel: space_kind
 
         # and it EVOLVES in the substrate: a second tick under a different stimulus moves the state
         before = copy(ms)
-        gv2 = merge(gv, (mods = r.governance.mods, stimulus = [0.1, 0.2, 0.9, 0.8]))  # low novelty, high risk
-        r2 = mid_step!(l6, Observation("f2", "vision", "u2", "(entity u2 log)", :e2,
-            Dict(:item => (:thing, :log))); governor = gv2)
+        gv2 = merge(gv, (mods=r.governance.mods, stimulus=[0.1, 0.2, 0.9, 0.8]))  # low novelty, high risk
+        r2 = mid_step!(l6,
+            Observation("f2", "vision", "u2", "(entity u2 log)", :e2,
+                Dict(:item => (:thing, :log))); governor=gv2)
         after = motives(r6)
-        @test any(name -> !isapprox(before[name], after[name]; atol = 1e-9), keys(before))
+        @test any(name -> !isapprox(before[name], after[name]; atol=1e-9), keys(before))
         # …and what we read back is THIS TICK'S appraisal, not merely *a* different one. The `any(…)`
         # above is satisfied by any change at all, so it could not see that the read side was resolving
         # duplicate rows by MORK trie byte order rather than by time — it would still have passed while
         # `motives` returned an arbitrary historical row. Pin every modulator to the value the governor
         # just produced (through set_motive!'s safe-region projection, which is the only transform
         # applied on the way in).
-        for (i, name) in enumerate(("valence", "arousal", "approach", "resolution", "threshold", "securing"))
-            @test isapprox(after[name], clamp(r2.governance.mods[i], 0.0, 1.0); atol = 1e-9)
+        for (i, name) in enumerate((
+            "valence", "arousal", "approach", "resolution", "threshold", "securing"
+        ))
+            @test isapprox(after[name], clamp(r2.governance.mods[i], 0.0, 1.0); atol=1e-9)
         end
     end
 
@@ -555,7 +573,8 @@ using WorldModel: space_kind
     end
 
     @testset "GEO-EVO two-ends — synthesis CONVERGES onto the backward subgoal motif (§3.4)" begin
-        reg8b = SpaceRegistry(manifest(; store=mktempdir())); seed_world_model!(reg8b)
+        reg8b = SpaceRegistry(manifest(; store=mktempdir()))
+        seed_world_model!(reg8b)
         prims = ["a", "b", "c", "d", "e"]
         base(p) = 0.0          # neutral base fitness — only the two-ends pull + Occam drive selection
         weak(p) = length(p)    # weakness = program length

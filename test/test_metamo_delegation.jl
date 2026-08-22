@@ -25,7 +25,7 @@ const MetaMoCore = WorldModel.MetaMoCore
     @test MetaMoCore.in_safe_region(unsafe_g, unsafe_m) == false
     g2, m2 = MetaMoCore.project_to_safe(unsafe_g, unsafe_m)
     @test MetaMoCore.in_safe_region(g2, m2) == true        # projection RESTORES safety
-    @test isapprox(g2[1], 0.3; atol = 1e-6)                # gInd floored to θ_safe
+    @test isapprox(g2[1], 0.3; atol=1e-6)                # gInd floored to θ_safe
     naive = clamp(unsafe_g[1], 0.0, 1.0)                   # WorldModel's analog: per-component [0,1] clamp
     @test naive == 0.1 && naive < 0.3                      # the clamp leaves it UNSAFE — the capability gap
 
@@ -43,7 +43,7 @@ const MetaMoCore = WorldModel.MetaMoCore
 end
 
 @testset "MetaMo motive-governed goal loop (mid_step!) — canonical metamoGovern selects the goal" begin
-    reg = SpaceRegistry(manifest(; store = mktempdir()))
+    reg = SpaceRegistry(manifest(; store=mktempdir()))
     seed_world_model!(reg)
     assert_implication!(reg, "chop", "wood", 0.9, 0.8, 0.0)   # PLN knowledge: chop ⇒ wood
 
@@ -51,10 +51,10 @@ end
     mods = fill(0.5, 6)
     stim = [0.2, 0.8, 0.1, 0.2]
     candidates = [   # `wood` = positive goal-correlations + zero risk; `lava` = negative + high risk
-        (id = "wood", corrs = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], risk = 0.0,
-            dg = [0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]),
-        (id = "lava", corrs = [0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0], risk = 1.0,
-            dg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        (id="wood", corrs=[0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], risk=0.0,
+            dg=[0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]),
+        (id="lava", corrs=[0.0, 0.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0], risk=1.0,
+            dg=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     ]
 
     # canonical metamoGovern (Ψ→𝔻→damp→project) selects the goal from the OpenPsi state
@@ -63,12 +63,20 @@ end
     @test length(g.goals) == 8 && length(g.mods) == 6       # safe next motive state returned
 
     # govern is FULLY native (Ψ + 𝔻 in Julia, no MeTTa eval) — both gated against the lib oracle:
-    @test all(isapprox.(MetaMoCore._appraise_native(goals, mods, stim), MetaMoCore.appraise(goals, mods, stim); atol = 1e-6))
+    @test all(
+        isapprox.(
+            MetaMoCore._appraise_native(goals, mods, stim),
+            MetaMoCore.appraise(goals, mods, stim);
+            atol=1e-6
+        )
+    )
 
     # the GOAL LOOP is now motive-governed: mid_step! with a governor (no explicit goal) selects + acts
     loop = CognitiveLoop(reg)
     obs = Observation("f", "vision", "u", "(entity u tree)", :e, Dict(:i => (:tree, :u)))
-    rr = mid_step!(loop, obs; governor = (goals = goals, mods = mods, stimulus = stim, candidates = candidates))
+    rr = mid_step!(
+        loop, obs; governor=(goals=goals, mods=mods, stimulus=stim, candidates=candidates)
+    )
     @test rr.goal == "wood"                                 # MetaMo chose the goal (none was passed in)
     @test rr.action !== nothing && rr.action[1] == "chop"   # PLN then selected the action for it
     @test rr.governance.chosen == "wood"

@@ -35,7 +35,8 @@ end
 
 "A fresh, empty HMH index of dimension `dim`."
 hmh_fresh(dim::Int=DEFAULT_DIM) = HMHIndex(
-    dim, RoleBook(dim), Dict{Symbol, HV{BipolarMAP}}(), content_hv("__hmh_default_schema", dim),
+    dim, RoleBook(dim), Dict{Symbol, HV{BipolarMAP}}(),
+    content_hv("__hmh_default_schema", dim),
     Dict{Symbol, Episode}(), Dict{Symbol, HV{BipolarMAP}}(),
     Dict{Symbol, Vector{String}}())
 
