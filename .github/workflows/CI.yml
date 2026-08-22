@@ -69,7 +69,7 @@ jobs:
           version: '1.12'
       - name: Check formatting
         run: |
-          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.5.2"))'
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.12.6"))'
           julia -e 'using JuliaFormatter; format(".")'
           if ! git diff --quiet; then
             echo "::error::Formatting check failed:"
