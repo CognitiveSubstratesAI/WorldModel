@@ -189,7 +189,7 @@ implements mining, PLN tightening, consolidation, SubRep admission and MOSES/GEO
 there is NO blending stage, and nothing in the tree implements one (the only repo-wide hit is an
 incidental mention in `Core/lib/subrep/easa.metta`). Blending is the step that INVENTS composites; without
 it the ambient loop can refine and select over existing structure but cannot originate new concepts.
-Reference implementation available at `~/JuliaAGI/dev-zone/conceptBlending` (four approaches) — but note
+Reference implementation available at `~/dev-zone/conceptBlending` (four approaches) — but note
 its category-theoretic pipeline delegates generalization and morphism-finding to an LLM
 (`generalization_builder.metta` = `(llm:generate-gen …)`), so adopting it as-is would put an LLM
 dependency inside the ambient loop. Our GSLT theory algebra (`Core/src/standard/GSLT.jl`: `Theory` with
