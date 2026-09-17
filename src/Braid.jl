@@ -41,7 +41,7 @@ without it `("ab","c")` and `("a","bc")` hash identically.
 ⚠️ NOT the end state. In a byte-trie THE PATH IS THE CONTENT ADDRESS — whitepaper §2.1 calls Atomspace
 "a typed, CONTENT-ADDRESSED metagraph", and MORK already ships structural content-addressing
 (`MORK/src/kernel/Sinks.jl:769` `HashSink`, mirroring upstream `sinks.rs`, hashing a SUB-TRIE via
-`zipper_fork!` + path enumeration). The correct long-run design stores evidence in a prefix-scoped trie
+`fork_read_zipper` + path enumeration). The correct long-run design stores evidence in a prefix-scoped trie
 region and uses its path as the id, needing no hash at all. That presupposes the shared-Atomspace work
 (Figure 3's centre), so this is the honest interim: a real digest instead of a 32-bit one, chosen so it
 does not foreclose the trie-path design. Do NOT "upgrade" this to `_zipper_subtrie_hash` — that returns

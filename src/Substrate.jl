@@ -11,7 +11,7 @@ using MORK:
     Space, new_space, space_add_all_sexpr!, space_remove_all_sexpr!, space_dump_all_sexpr,
     space_val_count, UNIT_VAL
 using PathMaps: act_from_zipper, act_save, act_open_mmap,
-    read_zipper_at_path, zipper_to_next_val!, zipper_path, set_val_at!
+    read_zipper_at_path, to_next_val!, path, set_val_at!
 
 export Space,
     fresh, add_sexpr!, remove_sexpr!, val_count, dump_atoms, snapshot_act!, load_act!,
@@ -69,12 +69,12 @@ Restore a `.act` snapshot into the live Space `s` by copying every stored byte-p
 snapshot, walk it, `set_val_at!`). Returns the atom count restored. This is the writable counterpart to the
 connectome's read-only cold-mmap query.
 """
-function load_act!(s::Space, path::AbstractString)::Int
-    tree = act_open_mmap(path)
+function load_act!(s::Space, file::AbstractString)::Int
+    tree = act_open_mmap(file)
     rz = read_zipper_at_path(tree, UInt8[])
     n = 0
-    while zipper_to_next_val!(rz)
-        set_val_at!(s.btm, collect(zipper_path(rz)), UNIT_VAL)
+    while to_next_val!(rz)
+        set_val_at!(s.btm, collect(path(rz)), UNIT_VAL)
         n += 1
     end
     return n
@@ -89,8 +89,8 @@ the connectome's `read_zipper_at_path` frontier walk.
 """
 function walk_prefix(f::Function, s::Space, prefix::Vector{UInt8})
     rz = read_zipper_at_path(s.btm, prefix)
-    while zipper_to_next_val!(rz)
-        f(collect(zipper_path(rz)))
+    while to_next_val!(rz)
+        f(collect(path(rz)))
     end
     return nothing
 end
